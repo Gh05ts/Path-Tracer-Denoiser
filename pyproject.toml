@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wavefront-denoiser"
+version = "0.1.0"
+description = "HDR frame datasets and NTASAD experiments for the CUDA wavefront renderer"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.21", "OpenEXR>=3.2,<4"]
+
+[project.optional-dependencies]
+train = ["torch>=2.0", "Pillow>=9"]
+test = ["pytest>=7"]
+analysis = ["matplotlib>=3.5"]
+
+[project.scripts]
+wavefront-denoiser = "wavefront_denoiser.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

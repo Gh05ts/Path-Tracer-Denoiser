@@ -1,0 +1,9 @@
+{
+  "sequence_id": "v1_sponza_test", "scene": "sponza",
+  "width": 128, "height": 96, "tile_width": 128, "tile_height": 96,
+  "samples": 4, "reference_samples": 8192, "sample_start": 40000000, "max_depth": 12,
+  "frames": [
+    {},
+    {"position": [-8.0, 1.2, 2.0], "target": [0.0, 2.0, 0.0]}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "split_manifest": "dataset_split_v1.json",
+  "epochs": 20,
+  "batch_size": 4,
+  "patch_size": 64,
+  "patches_per_frame": 8,
+  "learning_rate": 0.001,
+  "linear_loss_weight": 0.1,
+  "seed": 7,
+  "base_channels": 16,
+  "num_workers": 0,
+  "cpu_threads": 4
+}

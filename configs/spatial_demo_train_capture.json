@@ -1,0 +1,18 @@
+{
+  "sequence_id": "demo_spatial_train",
+  "scene": "demo",
+  "width": 128,
+  "height": 96,
+  "tile_width": 64,
+  "tile_height": 48,
+  "samples": 4,
+  "reference_samples": 512,
+  "sample_start": 0,
+  "max_depth": 12,
+  "frames": [
+    {"position": [-4.0, 1.2, 5.0], "target": [0.0, 0.2, 0.0]},
+    {"position": [-3.0, 1.5, 5.5], "target": [0.0, 0.2, 0.0]},
+    {"position": [0.0, 1.0, 6.0], "target": [0.0, 0.2, 0.0]},
+    {"position": [3.5, 1.8, 4.0], "target": [0.0, 0.2, 0.0]}
+  ]
+}

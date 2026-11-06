@@ -1,0 +1,38 @@
+{
+  "format": "wavefront-reference-plan",
+  "version": 1,
+  "split_manifest": "dataset_split_v1.json",
+  "sample_counts": [512, 2048, 8192],
+  "replicates": 2,
+  "max_noise_fraction": 0.1,
+  "sample_start": 1000000,
+  "cases": [
+    {
+      "id": "demo",
+      "group": "v1_demo_train",
+      "capture": {
+        "scene": "demo", "width": 128, "height": 96, "tile_width": 128, "tile_height": 96,
+        "samples": 4, "max_depth": 12,
+        "frames": [{"position": [-4.0, 1.2, 5.0], "target": [0.0, 0.2, 0.0]}]
+      }
+    },
+    {
+      "id": "prism",
+      "group": "v1_prism_train",
+      "capture": {
+        "scene": "prism", "width": 128, "height": 96, "tile_width": 128, "tile_height": 96,
+        "samples": 4, "max_depth": 12,
+        "frames": [{"position": [0.0, 1.2, 6.5], "target": [0.0, 0.8, -0.6]}]
+      }
+    },
+    {
+      "id": "deer",
+      "group": "v1_deer_validation",
+      "capture": {
+        "scene": "deer", "width": 128, "height": 96, "tile_width": 128, "tile_height": 96,
+        "samples": 4, "max_depth": 12,
+        "frames": [{"position": [-3.5, 1.2, 4.0], "target": [0.13, 0.1, 0.5]}]
+      }
+    }
+  ]
+}

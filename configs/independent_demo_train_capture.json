@@ -1,0 +1,11 @@
+{
+  "sequence_id": "v1_demo_train", "scene": "demo",
+  "width": 128, "height": 96, "tile_width": 128, "tile_height": 96,
+  "samples": 4, "reference_samples": 8192, "sample_start": 10000000, "max_depth": 12,
+  "frames": [
+    {"position": [-4.0, 1.2, 5.0], "target": [0.0, 0.2, 0.0]},
+    {"position": [-3.0, 1.5, 5.5], "target": [0.0, 0.2, 0.0]},
+    {"position": [0.0, 1.0, 6.0], "target": [0.0, 0.2, 0.0]},
+    {"position": [3.5, 1.8, 4.0], "target": [0.0, 0.2, 0.0]}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "sequence_id": "prism_spatial_validation",
+  "scene": "prism",
+  "width": 128,
+  "height": 96,
+  "tile_width": 64,
+  "tile_height": 48,
+  "samples": 4,
+  "reference_samples": 512,
+  "sample_start": 300000,
+  "max_depth": 12,
+  "frames": [
+    {"position": [-0.4, 1.3, 6.2], "target": [0.0, 0.8, -0.6]},
+    {"position": [0.4, 1.6, 6.1], "target": [0.0, 0.8, -0.6]}
+  ]
+}

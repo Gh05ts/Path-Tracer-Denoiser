@@ -1,0 +1,16 @@
+{
+  "format": "wavefront-dataset-split",
+  "version": 1,
+  "data_root": "../data/spatial-independent-v1",
+  "partitions": {
+    "train": ["v1_demo_train", "v1_prism_train"],
+    "validation": ["v1_deer_validation"],
+    "test": ["v1_sponza_test"]
+  },
+  "groups": {
+    "v1_demo_train": {"scene": "demo", "family": "demo", "capture_config": "independent_demo_train_capture.json"},
+    "v1_prism_train": {"scene": "prism", "family": "cornell_variants", "capture_config": "independent_prism_train_capture.json"},
+    "v1_deer_validation": {"scene": "deer", "family": "deer", "capture_config": "independent_deer_validation_capture.json"},
+    "v1_sponza_test": {"scene": "sponza", "family": "sponza", "capture_config": "independent_sponza_test_capture.json"}
+  }
+}

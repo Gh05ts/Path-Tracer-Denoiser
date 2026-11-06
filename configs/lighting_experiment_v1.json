@@ -1,0 +1,183 @@
+{
+  "format": "wavefront-lighting-experiment",
+  "version": 1,
+  "width": 128,
+  "height": 96,
+  "samples": 4,
+  "max_depth": 12,
+  "reference_counts": [
+    2048,
+    8192,
+    32768
+  ],
+  "replicates": 2,
+  "max_noise_fraction": 0.1,
+  "seeds": [
+    7,
+    19,
+    41
+  ],
+  "control_condition": "sky",
+  "lighting": {
+    "sky": {
+      "sky": true,
+      "area": false
+    },
+    "large_area": {
+      "sky": false,
+      "area": true,
+      "center": [
+        -1,
+        6,
+        0
+      ],
+      "size": 4.0,
+      "emission": [
+        24,
+        24,
+        24
+      ]
+    },
+    "small_area": {
+      "sky": false,
+      "area": true,
+      "center": [
+        -1,
+        6,
+        0
+      ],
+      "size": 0.5,
+      "emission": [
+        1536,
+        1536,
+        1536
+      ]
+    },
+    "side_area_sky": {
+      "sky": true,
+      "area": true,
+      "center": [
+        -4,
+        5,
+        -3
+      ],
+      "size": 0.5,
+      "emission": [
+        1536,
+        1536,
+        1536
+      ]
+    }
+  },
+  "cameras": {
+    "train": [
+      {
+        "position": [
+          -4,
+          1.2,
+          5
+        ],
+        "target": [
+          0,
+          0.2,
+          0
+        ]
+      },
+      {
+        "position": [
+          -3,
+          1.5,
+          5.5
+        ],
+        "target": [
+          0,
+          0.2,
+          0
+        ]
+      },
+      {
+        "position": [
+          0,
+          1,
+          6
+        ],
+        "target": [
+          0,
+          0.2,
+          0
+        ]
+      },
+      {
+        "position": [
+          3.5,
+          1.8,
+          4
+        ],
+        "target": [
+          0,
+          0.2,
+          0
+        ]
+      }
+    ],
+    "validation": [
+      {
+        "position": [
+          -4,
+          1.6,
+          4.5
+        ],
+        "target": [
+          0,
+          0.2,
+          0
+        ]
+      }
+    ],
+    "probe": [
+      {
+        "position": [
+          1.5,
+          1.2,
+          5.5
+        ],
+        "target": [
+          0,
+          0.2,
+          0
+        ]
+      },
+      {
+        "position": [
+          -1.5,
+          1.8,
+          4.8
+        ],
+        "target": [
+          0,
+          0.2,
+          0
+        ]
+      }
+    ]
+  },
+  "training": {
+    "epochs": 20,
+    "batch_size": 4,
+    "patch_size": 64,
+    "patches_per_frame": 4,
+    "learning_rate": 0.001,
+    "linear_loss_weight": 0.1,
+    "base_channels": 16,
+    "cpu_threads": 4
+  },
+  "baseline_checkpoint": "../runs/spatial-independent-v2/model.pt",
+  "observed_benchmark": "../data/spatial-independent-v2/v2_sponza_test",
+  "extra_reference_counts": {
+    "side_area_sky": [
+      65536
+    ]
+  },
+  "minimum_reference_samples": 8192,
+  "reuse_reference_captures": "../runs/lighting-reference-pilot-v1/reference_convergence/captures"
+}

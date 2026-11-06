@@ -1,0 +1,18 @@
+{
+  "sequence_id": "prism_spatial_train",
+  "scene": "prism",
+  "width": 128,
+  "height": 96,
+  "tile_width": 64,
+  "tile_height": 48,
+  "samples": 4,
+  "reference_samples": 512,
+  "sample_start": 200000,
+  "max_depth": 12,
+  "frames": [
+    {"position": [0.0, 1.2, 6.5], "target": [0.0, 0.8, -0.6]},
+    {"position": [-0.8, 1.4, 6.0], "target": [0.0, 0.8, -0.6]},
+    {"position": [0.8, 1.4, 6.0], "target": [0.0, 0.8, -0.6]},
+    {"position": [0.0, 1.8, 5.8], "target": [0.0, 0.8, -0.6]}
+  ]
+}
