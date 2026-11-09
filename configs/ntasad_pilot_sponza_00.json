@@ -1,0 +1,111 @@
+{
+  "sequence_id": "ntasad_pilot_sponza_00",
+  "scene": "sponza",
+  "width": 192,
+  "height": 128,
+  "tile_width": 192,
+  "tile_height": 128,
+  "samples": 4,
+  "reference_samples": 1024,
+  "sample_start": 103000000,
+  "max_depth": 12,
+  "caustics": false,
+  "frames": [
+    {
+      "position": [
+        -10.0,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    },
+    {
+      "position": [
+        -9.96,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    },
+    {
+      "position": [
+        -9.92,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    },
+    {
+      "position": [
+        -9.88,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    },
+    {
+      "position": [
+        -9.84,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    },
+    {
+      "position": [
+        -9.8,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    },
+    {
+      "position": [
+        -9.76,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    },
+    {
+      "position": [
+        -9.72,
+        0.35,
+        0.8
+      ],
+      "target": [
+        6,
+        3.2,
+        2.4
+      ]
+    }
+  ]
+}

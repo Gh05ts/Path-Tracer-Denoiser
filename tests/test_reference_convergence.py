@@ -60,6 +60,15 @@ def test_noise_estimate_and_budget_selection(synthetic_references, tmp_path):
     assert (tmp_path / "report.json").exists() and (tmp_path / "summary.csv").exists()
 
 
+def test_sample_stride_is_sampling_allocation_not_an_integrator_change(synthetic_references):
+    _, _, plan, captures = synthetic_references
+    for path in captures.rglob("manifest.json"):
+        metadata = json.loads(path.read_text())
+        metadata["render"]["sample_stride"] = metadata["render"]["samples"] + metadata["render"]["reference_samples"]
+        path.write_text(json.dumps(metadata))
+    assert analyze_reference_convergence(plan, captures)["selected_reference_samples"] == 8
+
+
 def test_insufficient_budget_is_reported(synthetic_references):
     _, _, plan, captures = synthetic_references
     plan = dict(plan, max_noise_fraction=0.0001)

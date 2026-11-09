@@ -114,7 +114,7 @@ def analyze_reference_convergence(plan: dict, captures: str | Path) -> dict:
         highlight_input_rmse = float(np.sqrt(np.square(noisy[highlight] - anchor[highlight]).mean())) if highlight.any() else 0.0
         rows = []
         # Sampling identity changes across levels; estimator settings must not.
-        ignored = {"sample_start", "samples", "reference_sample_start", "reference_samples"}
+        ignored = {"sample_start", "samples", "reference_sample_start", "reference_samples", "sample_stride"}
         settings = {key: value for key, value in base.metadata["render"].items() if key not in ignored}
         for samples in counts:
             frames = [loaded[case["id"], samples, replica] for replica in range(plan["replicates"])]

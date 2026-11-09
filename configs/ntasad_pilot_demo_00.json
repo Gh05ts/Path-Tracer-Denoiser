@@ -1,0 +1,111 @@
+{
+  "sequence_id": "ntasad_pilot_demo_00",
+  "scene": "demo",
+  "width": 192,
+  "height": 128,
+  "tile_width": 192,
+  "tile_height": 128,
+  "samples": 4,
+  "reference_samples": 1024,
+  "sample_start": 101000000,
+  "max_depth": 12,
+  "caustics": false,
+  "frames": [
+    {
+      "position": [
+        -4.0,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    },
+    {
+      "position": [
+        -3.96,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    },
+    {
+      "position": [
+        -3.92,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    },
+    {
+      "position": [
+        -3.88,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    },
+    {
+      "position": [
+        -3.84,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    },
+    {
+      "position": [
+        -3.8,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    },
+    {
+      "position": [
+        -3.76,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    },
+    {
+      "position": [
+        -3.72,
+        1.2,
+        5.0
+      ],
+      "target": [
+        0,
+        0.2,
+        0
+      ]
+    }
+  ]
+}

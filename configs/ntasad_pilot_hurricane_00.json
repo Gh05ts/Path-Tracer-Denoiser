@@ -1,0 +1,111 @@
+{
+  "sequence_id": "ntasad_pilot_hurricane_00",
+  "scene": "hurricane",
+  "width": 192,
+  "height": 128,
+  "tile_width": 192,
+  "tile_height": 128,
+  "samples": 4,
+  "reference_samples": 1024,
+  "sample_start": 100000000,
+  "max_depth": 12,
+  "caustics": false,
+  "frames": [
+    {
+      "position": [
+        -0.14,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    },
+    {
+      "position": [
+        -0.1,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    },
+    {
+      "position": [
+        -0.06,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    },
+    {
+      "position": [
+        -0.02,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    },
+    {
+      "position": [
+        0.02,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    },
+    {
+      "position": [
+        0.06,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    },
+    {
+      "position": [
+        0.1,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    },
+    {
+      "position": [
+        0.14,
+        1.2,
+        6.5
+      ],
+      "target": [
+        0,
+        0.8,
+        -0.6
+      ]
+    }
+  ]
+}

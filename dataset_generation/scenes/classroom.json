@@ -1,0 +1,23 @@
+{
+  "name": "classroom",
+  "preset": "sponza",
+  "object": {
+    "source": "gltf",
+    "file": "../../../Wavefront-Path-Tracer/assets/gltf-research-scenes/scenes/classroom2/gltf/classroom2.glb"
+  },
+  "gltf_scale": 1,
+  "lighting": {
+    "profile": "standard",
+    "add_sponza_top_light": false,
+    "ignore_sponza_light_occlusion": false
+  },
+  "normal_maps": {
+    "enabled": true,
+    "minimum_cosine": 0
+  },
+  "environment": {
+    "file": "../../../Wavefront-Path-Tracer/assets/gltf-research-scenes/scenes/common/sunflowers_environment.hdr",
+    "intensity": 1,
+    "rotation_degrees": 0
+  }
+}

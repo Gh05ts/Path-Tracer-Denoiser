@@ -17,7 +17,9 @@ def capture_tool():
     if not executable:
         pytest.skip("Set WAVEFRONT_CAPTURE_EXECUTABLE to enable CUDA capture integration")
     executable = Path(executable).resolve()
-    renderer_root = executable.parent.parent
+    # Out-of-tree builds (e.g. /tmp) do not sit beside the preset manifests.
+    renderer_root = Path(os.environ.get("WAVEFRONT_RENDERER_ROOT",
+                        Path(__file__).resolve().parents[2] / "Wavefront-Path-Tracer")).resolve()
     return executable, renderer_root
 
 
@@ -96,3 +98,43 @@ def test_capture_lighting_preserves_sky_and_handles_nee_backends(capture_tool, t
         np.testing.assert_array_equal(tiled.buffers[name], sky.buffers[name])
     assert not np.allclose(tiled.buffers['reference'], sky.buffers['reference'])
     assert tiled.metadata['capture_lighting']['emission'] == [24, 24, 24]
+
+
+def test_frame_range_resume_and_report_keep_identical_inputs(capture_tool, tmp_path):
+    executable, renderer_root = capture_tool
+    config = {"sequence_id": "stride_resume", "scene": "demo", "width": 33, "height": 25,
+              "tile_width": 16, "tile_height": 12, "samples": 4, "reference_samples": 16,
+              "sample_stride": 128, "sample_start": 1000, "max_depth": 8,
+              "frames": [{}, {"position": [-9.9, .35, .8]}, {"position": [-9.8, .35, .8]}]}
+    baseline = run_capture(capture_tool, tmp_path, "baseline", config)
+    filename = tmp_path/"resume.json"
+    filename.write_text(json.dumps(config))
+    output = tmp_path/"resumed"
+    for first, end in ((0, 1), (2, 3), (1, 2)):
+        subprocess.run([str(executable), str(filename), str(output), "--start-frame", str(first), "--end-frame", str(end)],
+                       cwd=renderer_root, check=True, timeout=120, capture_output=True, text=True)
+    resumed = [load_frame(path) for path in discover_sequences(output)[config["sequence_id"]]]
+    reports = run_capture(capture_tool, tmp_path, "reports", dict(config, reference_samples=64))
+    for i, (expected, actual, report) in enumerate(zip(baseline, resumed, reports)):
+        assert actual.metadata == expected.metadata
+        assert actual.metadata["render"]["sample_start"] == 1000+i*128
+        for name, pixels in expected.buffers.items():
+            np.testing.assert_array_equal(actual.buffers[name], pixels)
+            if name not in ("reference", "reference_count"):
+                np.testing.assert_array_equal(report.buffers[name], pixels)
+    duplicate = subprocess.run([str(executable), str(filename), str(output), "--start-frame", "0", "--end-frame", "1"],
+                               cwd=renderer_root, timeout=30, capture_output=True, text=True)
+    assert duplicate.returncode == 1 and "already exists" in duplicate.stderr
+
+
+@pytest.mark.parametrize("changes", [{"sample_stride": 3}, {"sample_stride": -1}])
+def test_overlapping_sample_stride_rejected(capture_tool, tmp_path, changes):
+    executable, renderer_root = capture_tool
+    config = dict({"sequence_id": "invalid_stride", "scene": "demo", "width": 8, "height": 8,
+                   "samples": 4, "reference_samples": 16, "frames": [{}]}, **changes)
+    filename = tmp_path/"bad-stride.json"
+    filename.write_text(json.dumps(config))
+    output = tmp_path/"must-not-exist"
+    result = subprocess.run([str(executable), str(filename), str(output)], cwd=renderer_root,
+                            timeout=30, capture_output=True, text=True)
+    assert result.returncode == 1 and not output.exists()

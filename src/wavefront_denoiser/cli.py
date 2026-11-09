@@ -1,4 +1,4 @@
-"""Dataset validation, spatial training, evaluation, and HDR inference."""
+"""Dataset validation, spatial/recurrent training, evaluation and HDR inference."""
 
 import argparse
 import json
@@ -10,7 +10,7 @@ from .sequences import discover_sequences
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="HDR datasets and spatial denoising")
+    parser = argparse.ArgumentParser(description="HDR datasets and spatial/recurrent denoising")
     subcommands = parser.add_subparsers(dest="command", required=True)
     lighting = subcommands.add_parser("lighting-study", help="Run a matched-budget within-scene lighting experiment")
     lighting.add_argument("config")
@@ -25,6 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     train.add_argument("config")
     train.add_argument("output")
     train.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    recurrent = subcommands.add_parser("train-recurrent", help="Train the uniform-SPP NTASAD denoiser on sequence crops")
+    recurrent.add_argument("config")
+    recurrent.add_argument("output")
+    recurrent.add_argument("--resume")
+    recurrent.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     denoise = subcommands.add_parser("denoise", help="Denoise one HDR capture or named-channel EXR")
     denoise.add_argument("checkpoint")
     denoise.add_argument("input")
@@ -54,6 +59,12 @@ def main(argv: list[str] | None = None) -> int:
     capture_split.add_argument("--renderer-root")
     args = parser.parse_args(argv)
     try:
+        if args.command == "train-recurrent":
+            from .recurrent_training import train_recurrent
+
+            report = train_recurrent(args.config, args.output, args.device, resume=args.resume)
+            print(json.dumps(report, indent=2, allow_nan=False))
+            return 0
         if args.command == "lighting-study":
             from .lighting_experiment import prepare_experiment, train_and_evaluate
 

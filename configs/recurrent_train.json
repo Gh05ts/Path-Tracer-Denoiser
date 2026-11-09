@@ -1,0 +1,15 @@
+{
+  "data_root": "../data/temporal",
+  "train_sequences": ["camera_train"],
+  "validation_sequences": ["camera_validation"],
+  "epochs": 1000,
+  "batch_size": 4,
+  "window_length": 5,
+  "patch_size": 128,
+  "patches_per_window": 1,
+  "learning_rate": 0.001,
+  "base_channels": 48,
+  "seed": 7,
+  "num_workers": 0,
+  "cpu_threads": 4
+}

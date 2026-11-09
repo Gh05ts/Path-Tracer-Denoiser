@@ -1,0 +1,18 @@
+{
+  "name": "bistro",
+  "preset": "sponza",
+  "object": {
+    "source": "gltf",
+    "file": "../../../Wavefront-Path-Tracer/assets/niagara_bistro/bistro-png.gltf"
+  },
+  "gltf_scale": 1,
+  "lighting": {
+    "profile": "standard",
+    "add_sponza_top_light": false,
+    "ignore_sponza_light_occlusion": false
+  },
+  "normal_maps": {
+    "enabled": true,
+    "minimum_cosine": 0
+  }
+}

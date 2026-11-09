@@ -1,10 +1,20 @@
 # Wavefront denoiser
 
+The recurrent kernel-prediction denoiser, paper audit, sequence training, and
+resumable checkpoints are described in [NTASAD progress](docs/ntasad-progress.md).
+
+The new BMW/Bistro/interior/Dragon dataset workflow, camera trajectories,
+1080p capture, frame resume, SSH background launcher and fresh training commands
+are in [dataset generation](dataset_generation/README.md). Scripts live in `tools/`;
+image/guide outputs default to the workspace’s `../dataset/` directory.
+
 A separate research project for denoising captures from the CUDA wavefront
-renderer in `../new`. It includes a spatial HDR model, training and evaluation
+renderer in `../Wavefront-Path-Tracer`. It includes a spatial HDR model, training and evaluation
 commands, single-image inference, and a validated capture pipeline. The spatial
-model processes each still image independently; motion and temporal history
-are reserved for later NTASAD work.
+model processes each still image independently. The recurrent model consumes
+motion and temporal history, with a separate `train-recurrent` command. Its
+five-frame crops, loss and default architecture now follow the paper's denoiser
+specification, with unresolved implementation details documented in the audit.
 
 Whole-scene train/validation/test splits and measured reference budgets are
 available in [reference convergence and independent splits](docs/reference-convergence-and-splits.md).
@@ -22,8 +32,8 @@ python -m pip install -e '.[train]'
 Build the optional capture executable from the renderer directory:
 
 ```bash
-cmake -S ../new -B ../new/build -DPATHTRACER_BUILD_DATASET_CAPTURE=ON
-cmake --build ../new/build --target dataset_capture frame_export_tests --parallel 2
+cmake -S ../Wavefront-Path-Tracer -B ../Wavefront-Path-Tracer/build -DPATHTRACER_BUILD_DATASET_CAPTURE=ON
+cmake --build ../Wavefront-Path-Tracer/build --target dataset_capture frame_export_tests --parallel 2
 ```
 
 The renderer target requires the OpenEXR C++ development package and pkg-config.
@@ -175,8 +185,8 @@ scaffold directories remain available for later experiments. The frame contract 
 [docs/frame-format.md](docs/frame-format.md).
 
 Next: train using the independent split, expand the spatial dataset, and perform
-one final unseen-scene evaluation after model selection, followed by NTASAD
-kernel prediction and temporal recurrence.
+one final unseen-scene evaluation after model selection, followed by recurrent
+kernel-prediction training and temporal evaluation.
 Distributed capture, adaptive sampling, and render checkpoint integration are
 later steps. The capture executable uses the local task API and writes no
 renderer checkpoints.

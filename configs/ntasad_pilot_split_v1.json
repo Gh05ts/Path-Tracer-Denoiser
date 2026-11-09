@@ -1,0 +1,40 @@
+{
+  "format": "wavefront-dataset-split",
+  "version": 1,
+  "data_root": "../data/ntasad-pilot-v1",
+  "require_reference_policy": true,
+  "partitions": {
+    "train": [
+      "ntasad_pilot_hurricane_00",
+      "ntasad_pilot_demo_00"
+    ],
+    "validation": [
+      "ntasad_pilot_deer_00"
+    ],
+    "test": [
+      "ntasad_pilot_sponza_00"
+    ]
+  },
+  "groups": {
+    "ntasad_pilot_hurricane_00": {
+      "scene": "hurricane",
+      "family": "cornell_variants",
+      "capture_config": "ntasad_pilot_hurricane_00.json"
+    },
+    "ntasad_pilot_demo_00": {
+      "scene": "demo",
+      "family": "demo",
+      "capture_config": "ntasad_pilot_demo_00.json"
+    },
+    "ntasad_pilot_deer_00": {
+      "scene": "deer",
+      "family": "deer",
+      "capture_config": "ntasad_pilot_deer_00.json"
+    },
+    "ntasad_pilot_sponza_00": {
+      "scene": "sponza",
+      "family": "sponza",
+      "capture_config": "ntasad_pilot_sponza_00.json"
+    }
+  }
+}

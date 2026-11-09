@@ -1,0 +1,34 @@
+{
+  "sequence_id": "breakfast_room_hdr_preview",
+  "scene": "breakfast_room_hdr",
+  "scene_file": "../../Wavefront-Path-Tracer/assets/scenes/breakfast_room_hdr.json",
+  "width": 320,
+  "height": 180,
+  "tile_width": 320,
+  "tile_height": 180,
+  "samples": 4,
+  "reference_samples": 128,
+  "sample_start": 150000000,
+  "max_depth": 8,
+  "caustics": false,
+  "frames": [
+    {
+      "position": [
+        -0.5873181363670283,
+        2.762300154466933,
+        9.714294329048483
+      ],
+      "target": [
+        -0.5742601382704959,
+        2.6984370928925916,
+        8.716420850199437
+      ],
+      "up": [
+        0.0008356284501055143,
+        0.9979583462834424,
+        -0.06385752719273695
+      ],
+      "vertical_fov_degrees": 35.9834
+    }
+  ]
+}

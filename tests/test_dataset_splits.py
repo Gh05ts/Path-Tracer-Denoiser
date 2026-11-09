@@ -150,3 +150,21 @@ def test_strict_training_requires_reference_qualification(split_fixture, tmp_pat
     with pytest.raises(ValueError, match="qualified reference policy"):
         train_spatial(config_path, tmp_path / "must-not-exist", "cpu")
     assert not (tmp_path / "must-not-exist").exists()
+
+
+def test_declared_fixed_reference_budget_is_enforced_without_claiming_qualification(split_fixture):
+    filename, _, _ = split_fixture
+    rewrite(filename, lambda spec: spec.update(declared_reference_samples=16))
+    audit = audit_dataset_split(filename)
+    assert audit["declared_reference_samples"] == 16
+    assert audit["reference_samples"] is None
+    rewrite(filename, lambda spec: spec.update(declared_reference_samples=1024))
+    with pytest.raises(ValueError, match="declared dataset budget"):
+        audit_dataset_split(filename)
+
+
+def test_declared_frame_count_rejects_incomplete_clips(split_fixture):
+    filename, _, _ = split_fixture
+    rewrite(filename, lambda spec: spec["groups"]["train"].update(frame_count=8))
+    with pytest.raises(ValueError, match="Incomplete frame indices"):
+        audit_dataset_split(filename)

@@ -1,0 +1,111 @@
+{
+  "sequence_id": "ntasad_pilot_deer_00",
+  "scene": "deer",
+  "width": 192,
+  "height": 128,
+  "tile_width": 192,
+  "tile_height": 128,
+  "samples": 4,
+  "reference_samples": 1024,
+  "sample_start": 102000000,
+  "max_depth": 12,
+  "caustics": false,
+  "frames": [
+    {
+      "position": [
+        200.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    },
+    {
+      "position": [
+        198.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    },
+    {
+      "position": [
+        196.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    },
+    {
+      "position": [
+        194.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    },
+    {
+      "position": [
+        192.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    },
+    {
+      "position": [
+        190.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    },
+    {
+      "position": [
+        188.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    },
+    {
+      "position": [
+        186.0,
+        110.0,
+        330.0
+      ],
+      "target": [
+        -15,
+        104,
+        16
+      ]
+    }
+  ]
+}

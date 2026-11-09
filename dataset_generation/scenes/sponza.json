@@ -1,0 +1,18 @@
+{
+  "name": "sponza",
+  "preset": "sponza",
+  "object": {
+    "source": "gltf",
+    "file": "../../../Wavefront-Path-Tracer/assets/sponza/Sponza.gltf"
+  },
+  "gltf_scale": 1,
+  "lighting": {
+    "profile": "standard",
+    "add_sponza_top_light": true,
+    "ignore_sponza_light_occlusion": false
+  },
+  "normal_maps": {
+    "enabled": true,
+    "minimum_cosine": 0
+  }
+}

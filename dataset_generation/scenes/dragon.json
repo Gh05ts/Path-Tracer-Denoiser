@@ -1,0 +1,26 @@
+{
+  "name": "dragon",
+  "preset": "cornell",
+  "object": {
+    "source": "gltf",
+    "file": "../../../Wavefront-Path-Tracer/assets/DragonAttenuation.gltf",
+    "scale": 1.0,
+    "translation": [
+      0.381,
+      -0.3,
+      -0.2
+    ],
+    "dielectric": false
+  },
+  "room": {
+    "neutral": false,
+    "remove_backdrop": true
+  },
+  "lighting": {
+    "profile": "standard"
+  },
+  "normal_maps": {
+    "enabled": true,
+    "minimum_cosine": 0.0
+  }
+}

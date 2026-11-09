@@ -1,0 +1,127 @@
+{
+  "format": "wavefront-reference-plan",
+  "version": 1,
+  "split_manifest": "ntasad_pilot_split_v1.json",
+  "sample_counts": [
+    256,
+    1024,
+    4096
+  ],
+  "replicates": 2,
+  "max_noise_fraction": 0.1,
+  "sample_start": 120000000,
+  "cases": [
+    {
+      "id": "hurricane_f0",
+      "group": "ntasad_pilot_hurricane_00",
+      "capture": {
+        "scene": "hurricane",
+        "width": 192,
+        "height": 128,
+        "tile_width": 192,
+        "tile_height": 128,
+        "samples": 4,
+        "max_depth": 12,
+        "caustics": false,
+        "frames": [
+          {
+            "position": [
+              -0.14,
+              1.2,
+              6.5
+            ],
+            "target": [
+              0,
+              0.8,
+              -0.6
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "hurricane_f7",
+      "group": "ntasad_pilot_hurricane_00",
+      "capture": {
+        "scene": "hurricane",
+        "width": 192,
+        "height": 128,
+        "tile_width": 192,
+        "tile_height": 128,
+        "samples": 4,
+        "max_depth": 12,
+        "caustics": false,
+        "frames": [
+          {
+            "position": [
+              0.14,
+              1.2,
+              6.5
+            ],
+            "target": [
+              0,
+              0.8,
+              -0.6
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "demo_f4",
+      "group": "ntasad_pilot_demo_00",
+      "capture": {
+        "scene": "demo",
+        "width": 192,
+        "height": 128,
+        "tile_width": 192,
+        "tile_height": 128,
+        "samples": 4,
+        "max_depth": 12,
+        "caustics": false,
+        "frames": [
+          {
+            "position": [
+              -3.84,
+              1.2,
+              5.0
+            ],
+            "target": [
+              0,
+              0.2,
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "deer_f4",
+      "group": "ntasad_pilot_deer_00",
+      "capture": {
+        "scene": "deer",
+        "width": 192,
+        "height": 128,
+        "tile_width": 192,
+        "tile_height": 128,
+        "samples": 4,
+        "max_depth": 12,
+        "caustics": false,
+        "frames": [
+          {
+            "position": [
+              192.0,
+              110.0,
+              330.0
+            ],
+            "target": [
+              -15,
+              104,
+              16
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

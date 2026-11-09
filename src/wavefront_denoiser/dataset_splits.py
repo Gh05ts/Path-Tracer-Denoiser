@@ -27,6 +27,9 @@ def read_split_manifest(path: str | Path) -> dict:
         raise ValueError("Unsupported dataset split manifest")
     if not isinstance(spec.get("data_root"), str) or not spec["data_root"]:
         raise ValueError("Split manifest needs data_root")
+    if "declared_reference_samples" in spec and (type(spec["declared_reference_samples"]) is not int
+                                                  or spec["declared_reference_samples"] < 1):
+        raise ValueError("Declared reference samples must be a positive integer")
     groups = spec.get("groups")
     partitions = spec.get("partitions")
     if not isinstance(groups, dict) or not isinstance(partitions, dict) or set(partitions) != set(PARTITIONS):
@@ -43,6 +46,8 @@ def read_split_manifest(path: str | Path) -> dict:
             if not isinstance(entry, dict) or not all(isinstance(entry.get(key), str) and entry[key]
                                                     for key in ("scene", "family", "capture_config")):
                 raise ValueError(f"Invalid group declaration: {group}")
+            if "frame_count" in entry and (type(entry["frame_count"]) is not int or entry["frame_count"] < 1):
+                raise ValueError("Declared frame_count must be a positive integer")
             if entry["family"] in families and families[entry["family"]] != partition:
                 raise ValueError(f"Scene family crosses partitions: {entry['family']}")
             families[entry["family"]] = partition
@@ -123,15 +128,19 @@ def audit_dataset_split(path: str | Path, *, allow_missing_test: bool = False) -
                 seen[value] = partition
             if minimum_reference and metadata["render"]["reference_samples"] < minimum_reference:
                 raise ValueError(f"Reference budget below the qualified policy: {manifest}")
+            if metadata["render"]["reference_samples"] < spec.get("declared_reference_samples", 1):
+                raise ValueError(f"Reference budget below the declared dataset budget: {manifest}")
             measured = next((row.get("render_settings") for row in evidence["cases"] if row["group"] == group), None) if minimum_reference else None
             if measured:
-                ignored = {"tile_width", "tile_height", "persistent_wavefront"}
+                ignored = {"tile_width", "tile_height", "persistent_wavefront", "sample_stride"}
                 if any(metadata["render"].get(key) != value for key, value in measured.items() if key not in ignored):
                     raise ValueError(f"Integrator settings differ from reference calibration: {group}")
             inventory.append({"manifest": str(manifest.relative_to(root)), "manifest_sha256": json_digest(manifest),
                               "image_sha256": metadata["image_sha256"]})
         if len(identities) != 1:
             raise ValueError(f"Scene settings changed within group {group}")
+        if "frame_count" in entry and frame_indices != set(range(entry["frame_count"])):
+            raise ValueError(f"Incomplete frame indices in group {group}")
         records[group] = {"partition": partition, "scene": entry["scene"], "family": entry["family"],
                           "scene_fingerprint": next(iter(identities)), "frames": len(frames),
                           "status": "captured", "inventory": inventory}
@@ -139,6 +148,8 @@ def audit_dataset_split(path: str | Path, *, allow_missing_test: bool = False) -
             "split_manifest_sha256": spec["manifest_sha256"], "data_root": str(root),
             "partitions": spec["partitions"], "groups": records,
             "reference_samples": minimum_reference,
+            **({"declared_reference_samples": spec["declared_reference_samples"]}
+               if "declared_reference_samples" in spec else {}),
             "test_pixels_loaded": False,
             "status": "test_reserved" if any(row["status"] == "reserved" for row in records.values()) else "ready"}
 
