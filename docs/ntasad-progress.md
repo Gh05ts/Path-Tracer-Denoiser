@@ -293,6 +293,40 @@ job after explicit SIGHUP. The Python suite passed 151 tests with 12 optional
 GPU/fixture tests skipped; the separate actual GPU camera checks validated all
 v2 frames. Bulk v2 capture and production retraining have not started.
 
+### BMW HDR firefly correction and v3 pilot
+
+The user stopped the v2 bulk capture after spotting white floor specks. CPU
+replay traced two reproduced outliers to HDR-sun paths through glass and chrome.
+An older triangle-normal bug treated dielectric exits as entries; rough metals
+also used an ad hoc fuzzy reflection model without direct-light sampling.
+The renderer now preserves dielectric boundary orientation, uses GGX with a
+matching PDF/light sampling for nonzero-roughness metals in both execution
+modes, corrects photon interface classification, and declares integrator version
+4. See the [full diagnosis and remaining limitation](../../Wavefront-Path-Tracer/docs/diagnostics/bmw-hdr-fireflies/README.md).
+
+At the user's request the original `/tmp/ntasad-capture-build` was updated for
+both renderer and capture, rather than using a separate build. All 18 CTest
+tests passed; the relevant Python suite passed 72 with one optional fixture
+skipped, including actual GPU capture/mode/resume checks. Two corrected native
+1080p BMW frames at 4+1024 SPP took 388.7 seconds. Floor-region outlier counts
+fell 124→2 and 112→0; all buffers are finite and frame-one history validity is
+99.29%. A repeat skipped both frames without rendering.
+
+The new default `plan-v3.json` retains v2 cameras, motion profiles, sample ranges
+and scene splits, and outputs to `../../dataset/denoiser-v3`. V2 is preserved as
+diagnostic data. Training/report defaults follow v3; no production model was
+trained and bulk generation has not restarted.
+
+Reference quality remains unresolved: independent 320×180 BMW 1024/4096-SPP
+replicas failed the existing 0.1 noise-fraction threshold (whole-image ratios
+0.506/0.174; highlights 0.508/0.175). Almost all disagreement is concentrated in
+a few glass/HDR-sun highlights. CPU replay confirms a remaining interior-leather
+→ glass → sun path with roulette amplification, beyond the repaired orientation
+bug. Results and comparisons are under
+`../../dataset/diagnostics/bmw-hdr-fireflies/`. The v3 references remain explicitly
+fixed-budget/unqualified. Address glass/HDR variance or qualify a higher budget
+before another final-data bulk run. Adaptive pixel sampling remains deferred.
+
 ### Original implementation-stage requirements
 
 The paper reports nine training scenes, 16–25 eight-frame clips per scene,
@@ -313,3 +347,194 @@ require independent sample layers (1,2,4,8,16,32 SPP), the sampling-gradient
 approximation, budget normalization, and per-pixel/zero-sample renderer support.
 The current frame schema requires uniform positive sample counts. None of those
 renderer or export-contract changes are part of this denoiser-only work.
+
+
+### Remaining BMW variance: roulette isolation
+
+A current-header CPU-only study at the remaining glass/leather/sun pixel
+`(166,38)` used two disjoint 65,536-sample ranges. Disabling roulette within the
+same 12-bounce cap reduces the known sun sample from 66,862 to 10,671 (6.27×),
+but it still supplies about 96% of one range's red total. Independent range means
+remain far apart: 0.169485 versus 0.006548 without roulette, compared with
+1.026532 versus 0.006718 with the current schedule. This is selected-pixel
+variance evidence, not full-image convergence or a reliable mean estimate.
+The renderer executable and sampling policy remain unchanged. See the renderer
+diagnostic README's roulette study and `dataset/diagnostics/bmw-hdr-fireflies/roulette-study/`.
+Bulk generation/training remain stopped; v3 remains fixed-budget/unqualified,
+v2 stays separate, and adaptive sampling remains deferred.
+
+
+### Glass transport follow-up — integrator 5
+
+Further BMW replay found actual transport errors beyond roulette: a combined
+1 mm origin shift and 1 mm intersection cutoff skipped a reproduced 1.865 mm
+windshield exit; smooth normals could choose the wrong medium side or send
+specular directions through the wrong geometric hemisphere; Schlick strongly
+underestimated near-critical glass exit reflection. The renderer now uses
+precision-scaled ray spawning, a 1e-6 traversal cutoff, geometric boundary
+classification with a consistent normal fallback, exact dielectric Fresnel and
+radiance eta-squared transmission. Roulette's depth schedule remains unchanged,
+with inverse eta scaling keeping its survival heuristic eta-neutral. Visible
+terminal HDR glass branches are integrated with their Fresnel weights rather
+than receiving full sun radiance on a rare coin flip. Geometry still occludes
+those connections; no clamp, transparent-shadow approximation or scene edit is
+used. Both shading modes and photon interfaces use the shared boundary logic.
+
+Integrator version is now **5**. Only the existing `/tmp/ntasad-capture-build`
+is rebuilt, with one build job. V2 and the two native v3 pilot frames are
+preserved. Their integrator-4 provenance cannot be resumed/mixed with this build.
+The default plan remains `plan-v3.json`; its 1024-SPP budget has not been changed.
+
+Four new 320×180 BMW replicas retain the v4 cameras and sample ranges. The
+1024-SPP whole-image noise fraction improves 0.506→0.223 but still fails 0.1;
+4096 SPP improves 0.174→0.073 (highlights 0.072) and passes for this one calibration
+view. This is not qualification of the production budget, native resolution,
+other cameras or other scenes. The largest remaining 1024-SPP outlier replays
+as glass → interior leather → glass → sun with correctly paired boundaries.
+Open LightGlass meshes and a rear-light winding candidate were also recorded
+without altering assets. See the renderer diagnostic README and
+`../../dataset/diagnostics/bmw-hdr-fireflies/glass-investigation/` for comparisons,
+per-path evidence, topology audit and reproducible helpers.
+
+Bulk generation/training remain stopped. Adaptive pixel sampling remains deferred.
+
+
+Final validation: **18 renderer tests and 80 relevant Python tests passed**, with
+one optional fixture skipped. Both native v3 pilot EXRs retain their original
+checksums/integrator-4 provenance. BMW mode diagnostics have identical guides
+but one 128-SPP reference pixel differs by 1.96e-5. A same-binary 4096-SPP repeat
+has reference RMS difference 3.61e-6 (maximum 3.63e-4), so bit-identical BMW
+rerendering is not established; these small differences do not explain the
+remaining sun outliers. The official v5 calibration report was regenerated with
+the final executable and still yields 0.223 / 0.073 noise fractions.
+
+### Visible-speck regression and retained HDR sampling correction — integrator 8
+
+The user's image review exposed a v5 regression hidden by the global squared-error
+summary. At 1024 SPP, windshield pixels with linear luminance >1 and >10 times
+their eight-neighbor median increase from 1/2 per replica in v4 to 8/8 in v5.
+The score's 4-SPP denominator also changes between integrators. Neither that
+ratio nor a few selected path improvements establish fewer visible fireflies.
+The 1024/4096 levels use disjoint sample ranges, not nested image refinements.
+
+Chrome-region GPU outliers replay as chrome → diffuse surface → paired glass →
+HDR sun, or as diffuse surfaces seen between grille parts → glass → sun.
+Radiance-only sun removal eliminates those selected spikes with the same RNG
+and geometry. Diffuse continuation now mixes cosine and environment directions,
+traces the real intervening glass, and weights by the full mixture density;
+direct-light MIS uses the matching density. The HDR alias table now covers the
+bilinear texture footprint rather than relying on a tiny uniform probability
+in bright neighboring cells. Incorrect diffuse geometric fallback/resampling
+is replaced by zero-contribution rejection with a matching PDF. Controlled
+slab/sun and tilted-normal tests validate energy independently. No production
+radiance clamp, transparent-shadow shortcut, material/asset edit or adaptive
+pixel allocation is used.
+
+The diffuse-only candidate (integrator 6) sharply reduces windshield/window and
+grille variance. An extension to finite GGX (integrator 7) improved selected
+chrome/headlight paths but created larger outliers around another headlight;
+whole-image noise worsened. That experiment is **rejected and preserved**, not
+promoted based on its selected successes or its 4096-SPP scalar passing flag.
+Integrator **8** restores the v6 traversal/continuation estimator exactly,
+with finite GGX retaining its original matched BSDF sampling. Its new version
+prevents resuming the intervening experiment. Further glass/chrome connections
+and subpixel direct-sun reflections remain reference-quality limitations.
+
+All builds use only `/tmp/ntasad-capture-build` with `-j1`. Two native v3 pilots
+still match their original EXR checksums and retain integrator-4 provenance;
+they cannot be mixed/resumed with the current build. V2 stays separate, the
+default remains `plan-v3.json` with its existing 1024-SPP references, and bulk
+generation/training remain stopped. Adaptive pixel sampling remains deferred.
+See the renderer diagnosis and
+`../../dataset/diagnostics/bmw-hdr-fireflies/hdr-spot-investigation/` for counts,
+fixed-exposure comparisons, source/binary hashes and accepted/rejected evidence.
+
+### BMW appearance/material audit — integrator 9 candidate
+
+The user's brown windshield/headlight-detail review leaves v6/v8 appearance
+unqualified. Longer CPU replays at two changed windshield pixels show that
+cosine-only sampling also resolves the warm glass → leather → glass → HDR-sun
+contribution, with much larger uncertainty; that finding is not validation of
+the entire glass model. The supplied Cycles reference is denoised and uses a
+different filter/display transform; its clamp/glossy-filter settings are not
+fully recorded. The original PBRT source enables regularization.
+
+The loader also had a confirmed feature loss: BMW requires clearcoat on 12
+materials, but it and specular controls were silently dropped. All 114 glTF
+meshes / 792,746 triangles, including the headlight geometry, are accounted for.
+Integrator 9 adds opaque metallic/roughness specular and clearcoat layers with
+matched finite/delta sampling and direct MIS. Transmission remains a partial
+smooth-solid model: BMW omits the volume extension, which means thin glass in
+glTF. This semantic difference and the remaining HDR-sun tails are unresolved
+reference concerns, not a reason to restart generation.
+
+The matched-camera 700×500 comparison, material/geometry audit and replay logs
+are under `../../dataset/diagnostics/bmw-hdr-fireflies/appearance-investigation/`.
+All compilation remains serial in the original `/tmp/ntasad-capture-build`.
+Native v3 pilots retain integrator-4 provenance; v2 stays separate and plan-v3
+camera/sample/split/default budgets are unchanged. Bulk generation and training
+remain stopped; adaptive pixel sampling remains deferred.
+
+### Headlight reflective frame — integrator 10 candidate
+
+The coating-only v9 comparison restored paint/floor reflections but retained a
+dark headlight center and failed the 1024-SPP noise rule. All 18 renderer and
+80 relevant Python tests passed, with one optional fixture skipped; its source
+and images remain archived. Scalar 4096-SPP success did not qualify production.
+
+CPU replay then isolated an inner-chrome smooth normal whose ideal reflection
+points below the actual triangle: smooth view cosine 0.06875 versus geometric
+0.62039. Rejecting its narrow lobe makes the headlight cylinder appear black.
+A bounded CPU ablation using a valid reflective frame restores the cylinder;
+the dark-center red mean rises 0.03279 → 0.08357 while the neighboring cylinder
+changes only 0.13447 → 0.13746. Integrator 10 corrects base/coat reflective
+frames consistently in BRDF evaluation, continuation and MIS, preserving the
+diffuse normal. It is a documented smooth-normal policy, not radiance clamping,
+roughening, mesh editing or the rejected generic GGX guiding experiment.
+
+The warm windshield caustics and incomplete thin/solid glTF distinction remain
+separate reference concerns. Generation/training remain stopped, all builds
+remain serial in `/tmp/ntasad-capture-build`, and production plans/pilots remain
+separate and unchanged. See the renderer diagnosis and appearance comparisons.
+
+Final integrator-10 validation passes **18 renderer tests and 80 relevant Python
+tests**, with one optional fixture skipped. GPU headlight-center red rises
+0.03569 → 0.06877 at 1024 SPP; all guides/counts and both original native pilot
+EXR hashes are unchanged. The supplied reference still differs. The final
+1024/4096 noise fractions are 0.16413 / 0.05753: 1024 fails, and the absolute
+4096 noise estimate worsens versus v9 (0.04925 versus 0.03739). This is an
+appearance/model correction, **not** a general firefly-free result. A remaining
+grille outlier replays as three chrome bounces → paint → paired glass → HDR sun,
+with an individual red contribution of 41,672. The refracted connection proposal
+and native reference quality remain unresolved. Bulk generation/training remain
+stopped; no default SPP/plan or adaptive sampling change follows from these checks.
+
+### Fresh dataset with accepted indirect clamp — 2026-11-10
+
+The user accepted the renderer's indirect radiance clamp of 10 and authorized
+resetting the dataset. The validated integrator-11 executable in the original
+`/tmp/ntasad-capture-build` matches the recorded clamp-validation SHA-256
+`e4c694544e3491fb0a3bdb2923b461065817759f0ed3c1f891460a164bba6a52`;
+the existing build is current, so no build or new build directory was needed.
+
+`plan-v3.json` now explicitly records `indirect_radiance_clamp: 10.0`. The
+generator carries it into all capture and reference-check configs, and resume
+verification rejects frames with missing or different clamp metadata. V2 plans
+and outputs remain separate and unchanged. Cameras, sample ranges, splits,
+1920×1080 resolution, eight-frame clips and 4+1024-SPP budgets are preserved.
+
+The previous active v3 directory was moved, without copying or deleting EXRs,
+to `dataset/archive/denoiser-v3-before-clamp-2026-11-10`. Both original pilot
+EXR hashes were verified after the move. A fresh `dataset/denoiser-v3` contains
+the complete 126-clip / 1008-frame plan, split and training configs, bound to
+the validated renderer and referenced asset hashes, with zero captured frames.
+All diagnostics and older datasets remain intact. Bulk generation has not
+been launched by the assistant; the user receives the background launch command.
+Training and adaptive sampling remain deferred. Reference status remains
+`fixed_budget_not_convergence_qualified`.
+
+Dataset planning/resume, reference-convergence, frame, sequence and split checks:
+**77 passed, 1 optional fixture skipped**. Tests cover explicit clamping in
+production/report configs, invalid clamp settings and refusing mismatched
+completed-frame metadata. Renderer code was unchanged in this reset; the
+existing integrator-11 validation records all 18 renderer tests passing.

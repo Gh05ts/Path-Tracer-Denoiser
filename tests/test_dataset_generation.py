@@ -73,6 +73,8 @@ def create_frame(make_frame, output, config, i):
         m["render"].update(sample_start=start, reference_sample_start=start+4,
             sample_stride=config["sample_stride"], max_depth=config["max_depth"],
             russian_roulette_start_depth=config["russian_roulette_start_depth"], caustics=False)
+        if "indirect_radiance_clamp" in config:
+            m["render"]["indirect_radiance_clamp"] = config["indirect_radiance_clamp"]
     return make_frame(str(output/config["sequence_id"]/f"frame_{i:06d}"), index=i,
                       sequence=config["sequence_id"], previous=i > 0, width=8, height=8, metadata_mutate=metadata)
 
@@ -114,6 +116,32 @@ def test_changed_camera_is_not_silently_skipped(make_frame, tmp_path, small_conf
         verify_frame(directory, small_config, 0)
 
 
+@pytest.mark.parametrize("recorded", [None, 0, 20])
+def test_unmatched_clamp_is_not_silently_skipped(make_frame, tmp_path, small_config, recorded):
+    small_config["indirect_radiance_clamp"] = 10.
+    directory = create_frame(make_frame, tmp_path/"captures", small_config, 0)
+    verify_frame(directory, small_config, 0)
+    manifest = directory/"manifest.json"
+    metadata = json.loads(manifest.read_text())
+    if recorded is None:
+        del metadata["render"]["indirect_radiance_clamp"]
+    else:
+        metadata["render"]["indirect_radiance_clamp"] = recorded
+    manifest.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match="Frame metadata disagrees"):
+        verify_frame(directory, small_config, 0)
+
+
+@pytest.mark.parametrize("clamp", [-1, float("nan"), float("inf"), True, "10"])
+def test_invalid_plan_clamp_rejected(tmp_path, clamp):
+    plan = read_plan(PLAN)
+    plan["indirect_radiance_clamp"] = clamp
+    path = tmp_path/"plan.json"
+    path.write_text(json.dumps(plan))
+    with pytest.raises(ValueError, match="indirect_radiance_clamp"):
+        read_plan(path)
+
+
 def test_provenance_tracks_external_bytes_and_binds_renderer_after_plan(tmp_path):
     plan = read_plan(PLAN)
     scene = tmp_path/"scene.json"
@@ -142,13 +170,17 @@ def test_provenance_tracks_external_bytes_and_binds_renderer_after_plan(tmp_path
         prepare(path, output, configs, executable)
 
 
-def test_v2_profiles_cover_each_motion_at_three_speeds_without_extra_clips():
+def test_v3_profiles_preserve_v2_cameras_and_sample_ranges():
     from collections import Counter, defaultdict
     from wavefront_denoiser.dataset_generation import DEFAULT_PLAN, DEFAULT_DATASET_ROOT
     assert DEFAULT_DATASET_ROOT == Path(__file__).resolve().parents[2]/"dataset"
     plan = read_plan(DEFAULT_PLAN)
     configs = build_configs(DEFAULT_PLAN)
-    assert plan["dataset_id"] == "denoiser-v2"
+    assert plan["dataset_id"] == "denoiser-v3"
+    assert plan["indirect_radiance_clamp"] == 10.
+    assert {g: {k: v for k, v in c.items() if k != "indirect_radiance_clamp"}
+            for g, c in configs.items()} == build_configs(DEFAULT_PLAN.with_name("plan-v2.json"))
+    assert all(c["indirect_radiance_clamp"] == 10. for c in configs.values())
     assert len(configs) == 126
     for scene in plan["scenes"]:
         groups = [g for g, c in configs.items() if c["scene"] == scene["id"]]
@@ -173,6 +205,7 @@ def test_v2_profiles_cover_each_motion_at_three_speeds_without_extra_clips():
     for g, c in configs.items():
         assert c["frames"] == reports[g]["frames"]
         assert c["sample_start"] == reports[g]["sample_start"]
+        assert reports[g]["indirect_radiance_clamp"] == c["indirect_radiance_clamp"]
 
 
 @pytest.mark.parametrize("multiplier", [0, -1, float("nan"), float("inf"), True])
@@ -182,7 +215,7 @@ def test_invalid_motion_multiplier_rejected(multiplier):
         trajectory(scene, scene["anchors"][0], "linear", motion_multiplier=multiplier)
 
 
-def test_cli_defaults_to_v2_under_workspace_dataset(tmp_path, monkeypatch):
+def test_cli_defaults_to_v3_under_workspace_dataset(tmp_path, monkeypatch):
     from wavefront_denoiser import dataset_generation as generation
     called = {}
     def prepare_plan(path, output, configs, executable):
@@ -192,6 +225,6 @@ def test_cli_defaults_to_v2_under_workspace_dataset(tmp_path, monkeypatch):
     monkeypatch.setattr(generation, "prepare", prepare_plan)
     assert generation.main(["--stage", "plan"]) == 0
     assert called["path"] == generation.DEFAULT_PLAN
-    assert called["output"] == tmp_path/"dataset/denoiser-v2"
+    assert called["output"] == tmp_path/"dataset/denoiser-v3"
     assert called["executable"] is None
     assert all(g.rsplit("_", 1)[1] in ("slow", "medium", "fast") for g in called["configs"])

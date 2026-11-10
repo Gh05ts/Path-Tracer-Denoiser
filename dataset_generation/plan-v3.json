@@ -1,0 +1,440 @@
+{
+  "format": "wavefront-denoiser-capture-plan",
+  "version": 1,
+  "dataset_id": "denoiser-v3",
+  "width": 1920,
+  "height": 1080,
+  "frames_per_clip": 8,
+  "samples": 4,
+  "reference_samples": 1024,
+  "report_reference_samples": 4096,
+  "sample_start": 500000000,
+  "sample_stride": 8192,
+  "clip_sample_stride": 1000000,
+  "max_depth": 12,
+  "russian_roulette_start_depth": 5,
+  "tile_width": 256,
+  "tile_height": 256,
+  "caustics": false,
+  "indirect_radiance_clamp": 10.0,
+  "motions": [
+    "linear",
+    "dolly",
+    "wave",
+    "circle",
+    "orbit",
+    "pan_tilt"
+  ],
+  "scenes": [
+    {
+      "id": "bmw",
+      "partition": "train",
+      "scene_file": "scenes/bmw.json",
+      "camera": {
+        "position": [
+          -11.0,
+          0.8,
+          5.000000000000001
+        ],
+        "target": [
+          -10.132729007267523,
+          0.6747275232719757,
+          4.518182781815292
+        ],
+        "up": [
+          0.1095078470295685,
+          0.9921223747978001,
+          -0.06083769279420473
+        ],
+        "vertical_fov_degrees": 29.999999999999996
+      },
+      "focus_distance": 12,
+      "motion_scale": 0.3,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.65,
+            0.12,
+            0.6
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "offset": [
+            -0.65,
+            0.25,
+            1.0
+          ],
+          "yaw_degrees": -6
+        }
+      ]
+    },
+    {
+      "id": "bistro",
+      "partition": "train",
+      "scene_file": "scenes/bistro.json",
+      "camera": {
+        "position": [
+          -26.43077278137207,
+          3.156161069869995,
+          11.170342445373535
+        ],
+        "target": [
+          -25.473019623721342,
+          3.1242214810425937,
+          11.456154942455283
+        ],
+        "up": [
+          0.0203399820747992,
+          0.9988479865031596,
+          0.04346245524913134
+        ],
+        "vertical_fov_degrees": 35.98339890412515
+      },
+      "focus_distance": 12,
+      "motion_scale": 0.4,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            -1.0,
+            0,
+            1.0
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            -0.6,
+            0.1,
+            1.8
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "offset": [
+            -1.4,
+            0.2,
+            2.2
+          ],
+          "yaw_degrees": -6
+        }
+      ]
+    },
+    {
+      "id": "living_room",
+      "partition": "train",
+      "scene_file": "scenes/living_room.json",
+      "camera": {
+        "position": [
+          5.105184435355126,
+          0.7310657523726809,
+          -2.317890597614662
+        ],
+        "target": [
+          4.143392671738068,
+          0.8054727536766069,
+          -2.054414186614074
+        ],
+        "up": [
+          0.07176296719264168,
+          0.9972279140316747,
+          -0.019658982215561865
+        ],
+        "vertical_fov_degrees": 58.715508
+      },
+      "focus_distance": 3,
+      "motion_scale": 0.08,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0.2
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.16,
+            0.08,
+            0.35
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "offset": [
+            -0.16,
+            0.15,
+            0.55
+          ],
+          "yaw_degrees": -6
+        }
+      ]
+    },
+    {
+      "id": "breakfast_room",
+      "partition": "train",
+      "scene_file": "scenes/breakfast_room.json",
+      "camera": {
+        "position": [
+          -0.5873181363670283,
+          2.762300154466933,
+          9.714294329048483
+        ],
+        "target": [
+          -0.5742601382704959,
+          2.6984370928925916,
+          8.716420850199437
+        ],
+        "up": [
+          0.0008356284501055143,
+          0.9979583462834424,
+          -0.06385752719273695
+        ],
+        "vertical_fov_degrees": 35.9834
+      },
+      "focus_distance": 8,
+      "motion_scale": 0.18,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0.5
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.35,
+            0.1,
+            0.8
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "offset": [
+            -0.35,
+            0.2,
+            1.1
+          ],
+          "yaw_degrees": -6
+        }
+      ]
+    },
+    {
+      "id": "dragon",
+      "partition": "train",
+      "scene_file": "scenes/dragon.json",
+      "camera": {
+        "position": [
+          0,
+          1.2,
+          6.5
+        ],
+        "target": [
+          0,
+          0.8,
+          -0.6
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "vertical_fov_degrees": 42
+      },
+      "focus_distance": 7.1,
+      "motion_scale": 0.18,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.6,
+            0.12,
+            0.2
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "offset": [
+            -0.6,
+            0.25,
+            0.4
+          ],
+          "yaw_degrees": -6
+        }
+      ]
+    },
+    {
+      "id": "bathroom",
+      "partition": "validation",
+      "scene_file": "scenes/bathroom.json",
+      "camera": {
+        "position": [
+          0.0072403115259740275,
+          0.9124052736469653,
+          -0.2275841178925894
+        ],
+        "target": [
+          -0.7446392094874944,
+          0.9278763017877911,
+          -0.8867036780077546
+        ],
+        "up": [
+          0.011633724423493155,
+          0.9998806333996412,
+          0.010198462179840426
+        ],
+        "vertical_fov_degrees": 55.0
+      },
+      "focus_distance": 2,
+      "motion_scale": 0.055,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0.3
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.12,
+            0.08,
+            0.15
+          ],
+          "yaw_degrees": 6
+        }
+      ]
+    },
+    {
+      "id": "classroom",
+      "partition": "validation",
+      "scene_file": "scenes/classroom.json",
+      "camera": {
+        "position": [
+          2.576395273208618,
+          1.094475507736206,
+          4.465750694274902
+        ],
+        "target": [
+          2.324345050992314,
+          1.1056744739334392,
+          3.4981013424116867
+        ],
+        "up": [
+          0.0028260166793266372,
+          0.999937289606043,
+          0.010836534691812921
+        ],
+        "vertical_fov_degrees": 39.59775192067671
+      },
+      "focus_distance": 7,
+      "motion_scale": 0.12,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0.12
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.3,
+            0.15,
+            0.4
+          ],
+          "yaw_degrees": 6
+        }
+      ]
+    },
+    {
+      "id": "sponza",
+      "partition": "test",
+      "scene_file": "scenes/sponza.json",
+      "camera": {
+        "position": [
+          -8,
+          1.5,
+          0
+        ],
+        "target": [
+          2,
+          2,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "vertical_fov_degrees": 55
+      },
+      "focus_distance": 10,
+      "motion_scale": 0.25,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0,
+            0.6,
+            2
+          ],
+          "yaw_degrees": 6
+        }
+      ]
+    }
+  ],
+  "motion_profiles": {
+    "slow": 0.6,
+    "medium": 1.4,
+    "fast": 2.8
+  }
+}

@@ -22,7 +22,7 @@ MOTIONS = ("linear", "dolly", "wave", "circle", "orbit", "pan_tilt")
 PARTITIONS = ("train", "validation", "test")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET_ROOT = PROJECT_ROOT.parent / "dataset"
-DEFAULT_PLAN = PROJECT_ROOT / "dataset_generation" / "plan-v2.json"
+DEFAULT_PLAN = PROJECT_ROOT / "dataset_generation" / "plan-v3.json"
 
 
 def digest(path: Path) -> str:
@@ -116,6 +116,10 @@ def read_plan(path: Path) -> dict:
         raise ValueError("Sample stride must accommodate the report reference budget")
     if plan["clip_sample_stride"] < plan["frames_per_clip"] * plan["sample_stride"]:
         raise ValueError("Clip sample ranges overlap")
+    if "indirect_radiance_clamp" in plan:
+        clamp = plan["indirect_radiance_clamp"]
+        if type(clamp) not in (int, float) or not math.isfinite(clamp) or clamp < 0:
+            raise ValueError("indirect_radiance_clamp must be finite and nonnegative")
     if not plan["motions"] or len(set(plan["motions"])) != len(plan["motions"]) or set(plan["motions"])-set(MOTIONS):
         raise ValueError("Invalid motion selection")
     if "motion_profiles" in plan:
@@ -164,6 +168,8 @@ def build_configs(plan_path: Path, *, width=None, height=None, reference_samples
                     group += "_"+profile
                 config = {k: plan[k] for k in ("max_depth", "russian_roulette_start_depth", "samples",
                           "sample_stride", "tile_width", "tile_height", "caustics")}
+                if "indirect_radiance_clamp" in plan:
+                    config["indirect_radiance_clamp"] = plan["indirect_radiance_clamp"]
                 config.update(sequence_id=group, scene=scene["id"],
                     scene_file=str((plan_path.parent / scene["scene_file"]).resolve()),
                     width=width or plan["width"], height=height or plan["height"],
@@ -323,6 +329,8 @@ def verify_frame(directory: Path, config: dict, index: int, *, pixels=False) -> 
                 "samples": config["samples"], "reference_samples": config["reference_samples"],
                 "sample_stride": config["sample_stride"], "max_depth": config["max_depth"],
                 "russian_roulette_start_depth": config["russian_roulette_start_depth"], "caustics": False}
+    if "indirect_radiance_clamp" in config:
+        expected["indirect_radiance_clamp"] = config["indirect_radiance_clamp"]
     if (metadata["sequence_id"] != config["sequence_id"] or metadata["scene"] != config["scene"]
             or metadata["frame_index"] != index or metadata["previous_frame_index"] != (index-1 if index else None)
             or metadata["width"] != config["width"] or metadata["height"] != config["height"]

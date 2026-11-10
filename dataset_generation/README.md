@@ -6,10 +6,26 @@ the package installed (`pip install -e '.[train,test]'`). The environment used f
 local checks is `/tmp/ntasad-venv/bin/python`; replace `python3` with your activated
 environment's Python when needed.
 
-`plan-v2.json` is the editable source of truth. It uses 1920×1080 captures, eight
+`plan-v3.json` is the editable source of truth. It uses 1920×1080 captures, eight
 frames per clip, independent 4-SPP noisy inputs and 1024-SPP references, depth 12,
-Russian roulette from depth 5, 256×256 render tiles, and caustics disabled.
+Russian roulette from depth 5, 256×256 render tiles, caustics disabled, and an
+explicit `indirect_radiance_clamp` of **10** for both noisy inputs and references.
 Adaptive sampling remains deferred.
+
+V3 keeps v2 cameras, motion profiles, sample IDs and scene splits, but uses the
+corrected integrator version **11**, including the glass/GGX, glTF material,
+reflective-normal and indirect-radiance clamp changes. The interrupted v2 captures remain in `../dataset/denoiser-v2`
+and must not be mixed into v3. See the renderer
+[diagnosis](../../Wavefront-Path-Tracer/docs/diagnostics/bmw-hdr-fireflies/README.md).
+
+**Current status (2026-11-10):** the user accepted clamp 10 and authorized a fresh
+fixed-sampling dataset. The old two-frame integrator-4 v3 pilot is preserved in
+`../dataset/archive/denoiser-v3-before-clamp-2026-11-10`. The active
+`../dataset/denoiser-v3` is reset to zero frames, with all 126 configs and the
+split prepared and locked to the validated integrator-11 binary. Generation is
+ready to launch using the command below. Training remains stopped. References
+retain the declared fixed-budget status; clamping does not confer convergence
+qualification.
 
 | Partition | Scenes | Clips | Frames |
 | --- | --- | ---: | ---: |
@@ -66,13 +82,13 @@ python3 tools/generate_dataset.py --stage preview \
 
 # Two real 1080p frames, 4+1024 SPP. Reused by the later complete capture.
 python3 tools/generate_dataset.py --stage pilot --scenes bmw \
-  --frame-range 0 2 --output ../dataset/denoiser-v2 \
+  --frame-range 0 2 --output ../dataset/denoiser-v3 \
   --renderer /tmp/ntasad-capture-build/dataset_capture
 
 # Extend that exact pilot to a full eight-frame clip; five-frame windows can now
 # be checked. Omitting --scenes selects BMW and Breakfast Room for the pilot.
 python3 tools/generate_dataset.py --stage pilot --scenes bmw \
-  --output ../dataset/denoiser-v2 \
+  --output ../dataset/denoiser-v3 \
   --renderer /tmp/ntasad-capture-build/dataset_capture
 ```
 
@@ -101,10 +117,11 @@ redirects stdin/stdout/stderr, and prints its PID and log path:
 ```bash
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh \
+  --plan dataset_generation/plan-v3.json \
   --renderer /tmp/ntasad-capture-build/dataset_capture
 ```
 
-That command captures the complete plan in `../dataset/denoiser-v2`. It works in one
+That command captures the complete plan in `../dataset/denoiser-v3`. It works in one
 go and skips verified completed frames when rerun. It survives SSH hangups while
 the host/process remains running; after a reboot or crash, start it again.
 The background worker was explicitly tested by sending SIGHUP during a plan job.
@@ -163,7 +180,7 @@ Run it separately before relying on the references for reported accuracy:
 
 ```bash
 python3 -m wavefront_denoiser reference-convergence \
-  ../dataset/denoiser-v2/reference-check-plan.json ../dataset/denoiser-v2-reference-check \
+  ../dataset/denoiser-v3/reference-check-plan.json ../dataset/denoiser-v3-reference-check \
   --capture-executable /tmp/ntasad-capture-build/dataset_capture \
   --renderer-root ../Wavefront-Path-Tracer
 ```
@@ -212,13 +229,13 @@ DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
 
 # Either model alone:
 python3 tools/train_dataset.py --models recurrent --device cuda \
-  --output runs/denoiser-v2-recurrent
+  --output runs/denoiser-v3-recurrent
 
 # Only an explicitly requested recurrent resume loads weights/Adam/RNG state.
 # Increase epochs in the same training config first; use a fresh output directory.
 python3 tools/train_dataset.py --models recurrent --device cuda \
-  --recurrent-resume runs/denoiser-v2-models/recurrent/last.pt \
-  --output runs/denoiser-v2-resumed
+  --recurrent-resume runs/denoiser-v3-models/recurrent/last.pt \
+  --output runs/denoiser-v3-resumed
 ```
 
 Training can begin once all train/validation groups are complete; test groups may
@@ -229,7 +246,7 @@ training automatically.
 ## Separate report references
 
 ```bash
-# Validation + evaluation scenes by default; separate ../dataset/denoiser-v2-reports4096.
+# Validation + evaluation scenes by default; separate ../dataset/denoiser-v3-reports4096.
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh reports \
   --renderer /tmp/ntasad-capture-build/dataset_capture
