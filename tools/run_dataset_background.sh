@@ -3,7 +3,10 @@
 set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 entry="$here/generate_dataset.py"
-if [[ "${1:-}" == "reports" ]]; then
+if [[ "${1:-}" == "r2" ]]; then
+    entry="$here/generate_r2_dataset.py"
+    shift
+elif [[ "${1:-}" == "reports" ]]; then
     entry="$here/generate_report_references.py"
     shift
 elif [[ "${1:-}" == "train" ]]; then

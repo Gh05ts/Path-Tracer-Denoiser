@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import signal
 import struct
 import subprocess
 import time
@@ -16,6 +17,8 @@ from urllib.parse import unquote
 import numpy as np
 
 from .dataset_splits import audit_dataset_split
+from .b2_archive import B2SceneArchiver
+from .r2_archive import R2SceneArchiver
 from .frames import load_frame, read_manifest
 from .training_defaults import dataset_training_config
 
@@ -358,10 +361,51 @@ def missing_ranges(indices: list[int]) -> list[tuple[int, int]]:
     return ranges
 
 
+def logged_frames(output: Path, group: str) -> set[str]:
+    """Read successful exports, including logs written before archive support.
+
+    dataset_capture flushes a quoted `Wrote` path only after publishing the
+    complete frame directory. Match the group/name rather than the absolute
+    prefix so a relocated dataset can still use its retained capture logs.
+    """
+    path = output / "logs" / f"{group}.log"
+    if not path.is_file():
+        return set()
+    completed = set()
+    for line in path.read_text().splitlines():
+        if not line.startswith('Wrote "'):
+            continue
+        try:
+            frame = Path(json.loads(line[len("Wrote "):]))
+        except (ValueError, TypeError):
+            # An interrupted log write is not evidence of a completed export.
+            continue
+        if frame.parent.name == group:
+            completed.add(frame.name)
+    return completed
+
+
+@contextmanager
+def terminate_subprocesses_on_sigterm():
+    """Let subprocess.run kill/reap its child when the launcher is terminated."""
+    def terminate(signum, frame):
+        raise SystemExit(128 + signum)
+    previous = signal.signal(signal.SIGTERM, terminate)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 def run_captures(configs: dict, groups: list[str], output: Path, executable: Path, renderer_root: Path,
-                 *, first_frame: int = 0, end_frame: int | None = None) -> dict:
-    captured, skipped = 0, 0
+                 *, first_frame: int = 0, end_frame: int | None = None,
+                 skip_missing_rendered: bool = False,
+                 scene_archiver: B2SceneArchiver | R2SceneArchiver | None = None) -> dict:
+    skip_missing_rendered = skip_missing_rendered or scene_archiver is not None
+    captured, skipped, archived = 0, 0, 0
     records = []
+    archived_scenes = []
+    last_scene_group = {configs[group]["scene"]: group for group in groups}
     for ordinal, group in enumerate(groups, 1):
         config = configs[group]
         directory = output / group
@@ -369,9 +413,17 @@ def run_captures(configs: dict, groups: list[str], output: Path, executable: Pat
         stop = len(config["frames"]) if end_frame is None else end_frame
         if not 0 <= first_frame < stop <= len(config["frames"]):
             raise ValueError("Frame range must lie inside the planned clip")
+        completed = logged_frames(output, group) if skip_missing_rendered else set()
         for i in range(first_frame, stop):
             frame = directory / f"frame_{i:06d}"
-            if frame.exists():
+            if (skip_missing_rendered and not (frame / "frame.exr").exists()
+                    and ((frame / "manifest.json").is_file() or frame.name in completed)):
+                # Explicitly trust local completion evidence; do not inspect
+                # manifests, image bytes, checksums, or remote storage here.
+                skipped += 1
+                archived += 1
+                print(f"  Skipping missing rendered frame: {group}/{frame.name}", flush=True)
+            elif frame.exists():
                 verify_frame(frame, config, i)
                 skipped += 1
             else:
@@ -401,9 +453,20 @@ def run_captures(configs: dict, groups: list[str], output: Path, executable: Pat
                 captured += 1
                 records.append({"group": group, "frame": i, "image_sha256": metadata["image_sha256"]})
             print(f"  Completed {end-first} frames in {time.monotonic()-before:.1f}s; log: {log_path}", flush=True)
+        scene = config["scene"]
+        if scene_archiver is not None and group == last_scene_group[scene]:
+            scene_configs = {g: c for g, c in configs.items() if c["scene"] == scene}
+            if scene_archiver.archive_scene(scene, scene_configs):
+                archived_scenes.append(scene)
     result = {"captured_frames": captured, "skipped_frames": skipped, "groups": groups,
               "frame_range": [first_frame, end_frame],
               "new_frames": records, "reference_status": "fixed_budget_not_convergence_qualified"}
+    if skip_missing_rendered:
+        result["archived_frames"] = archived
+    if scene_archiver is not None:
+        provider = getattr(scene_archiver, "provider", "b2")
+        result.update({f"{provider}_archived_scenes": archived_scenes,
+                       f"{provider}_destination": scene_archiver.destination})
     write_json(output / "last-capture.json", result)
     return result
 
@@ -458,10 +521,25 @@ def main(argv=None, *, reports=False) -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--scenes", nargs="+")
     parser.add_argument("--groups", nargs="+")
+    parser.add_argument("--skip-missing-rendered", action="store_true",
+                        help="Trust retained manifests/capture logs and skip missing rendered EXRs; "
+                             "does not check remote storage and omits the final local split audit")
+    archive_options = parser.add_mutually_exclusive_group()
+    archive_options.add_argument("--b2-archive", metavar="b2://BUCKET/PREFIX",
+                        help="Upload each complete scene directly to B2 using environment credentials, "
+                             "verify hashes, then remove local EXRs; implies --skip-missing-rendered. "
+                             "Legacy rclone REMOTE:BUCKET/PREFIX destinations are also accepted")
+    archive_options.add_argument("--r2-archive", metavar="r2://BUCKET/PREFIX",
+                                 help="Upload each complete scene to Cloudflare R2 Standard, verify hashes, "
+                                      "then remove local EXRs; implies --skip-missing-rendered")
+    parser.add_argument("--rclone", default="rclone", metavar="PATH", help="Executable for legacy rclone destinations only")
     parser.add_argument("--frame-range", nargs=2, type=int, metavar=("START", "END"),
                         help="Capture only [START,END) per clip, preserving the full plan for later resume")
     parser.add_argument("--partitions", nargs="+", choices=PARTITIONS, default=["validation", "test"] if reports else list(PARTITIONS))
     args = parser.parse_args(argv)
+    if (args.skip_missing_rendered or args.b2_archive or args.r2_archive) and args.stage != "capture":
+        parser.error("--skip-missing-rendered, --b2-archive and --r2-archive require --stage capture")
+    skip_missing_rendered = args.skip_missing_rendered or bool(args.b2_archive or args.r2_archive)
     args.plan = args.plan.resolve()
     plan = read_plan(args.plan)
     preview = args.stage == "preview"
@@ -493,18 +571,28 @@ def main(argv=None, *, reports=False) -> int:
     executable = args.renderer.resolve() if args.stage != "plan" else None
     if executable and not executable.is_file():
         parser.error(f"Build dataset_capture and pass --renderer: {executable}")
-    with capture_lock(output):
+    with capture_lock(output), terminate_subprocesses_on_sigterm():
         spec = prepare(args.plan, output, configs, executable)
+        scene_archiver = B2SceneArchiver(output, args.b2_archive, rclone=args.rclone) if args.b2_archive else None
+        if args.r2_archive:
+            scene_archiver = R2SceneArchiver(output, args.r2_archive)
+        if scene_archiver is not None:
+            scene_archiver.preflight()
         print(json.dumps({"output": str(output), "selected_clips": len(groups),
                           "selected_frames": len(groups)*(end-first),
                           "dimensions": [next(iter(configs.values()))["width"], next(iter(configs.values()))["height"]],
                           "reference_samples": spec["declared_reference_samples"]}, indent=2), flush=True)
         if args.stage != "plan":
             result = run_captures(configs, groups, output, executable, args.renderer_root.resolve(),
-                                  first_frame=first, end_frame=end)
+                                  first_frame=first, end_frame=end,
+                                  skip_missing_rendered=skip_missing_rendered, scene_archiver=scene_archiver)
             print(json.dumps({k: v for k, v in result.items() if k != "new_frames"}, indent=2), flush=True)
             if preview or args.stage == "pilot":
                 contact_sheet(output, configs, groups, first_frame=first, end_frame=end)
             if set(groups) == set(configs) and first == 0 and end == plan["frames_per_clip"]:
-                write_json(output / "split_audit.json", audit_dataset_split(output / "split.json"))
+                if skip_missing_rendered:
+                    print("Skipped final local split audit (--skip-missing-rendered); "
+                          "archived files were not validated.", flush=True)
+                else:
+                    write_json(output / "split_audit.json", audit_dataset_split(output / "split.json"))
     return 0

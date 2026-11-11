@@ -160,6 +160,223 @@ preserved under `recovery.partial/` and the unfinished frame is rendered again.
 Sampling within a partly rendered frame is not checkpointed. Completed frames
 remain usable even if the process dies before the clip finishes.
 
+### Resume after moving completed images off the server
+
+The default behavior is unchanged: resume checks local images and renders missing
+frame directories again. To keep generating while completed captures are stored
+elsewhere, opt into archive-aware resume:
+
+```bash
+DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
+  ./tools/run_dataset_background.sh \
+  --plan dataset_generation/plan-v4.json \
+  --renderer /tmp/ntasad-capture-build/dataset_capture \
+  --skip-missing-rendered
+```
+
+With `--skip-missing-rendered`, a missing `frame.exr` is skipped if its local
+`manifest.json` remains **or** the clip's retained `logs/GROUP.log` contains the
+renderer’s successful `Wrote` entry for that frame. Existing captures already
+have these log entries, so this also works after moving entire frame directories.
+Keep `logs/`, `capture_lock.json`, `capture_configs/`, `split.json` and the other
+small dataset sidecars locally. Without either completion record, a missing
+frame is treated as unfinished and rendered normally. Incomplete `.partial`
+exports do not count as completed frames.
+
+This mode trusts completion records without validating missing images, retained
+manifests, or cloud storage. Images still present locally receive the usual
+checks; the plan/assets/renderer provenance lock remains enforced. Each missing
+rendered frame is logged, and `last-capture.json` reports `archived_frames` as a
+subset of `skipped_frames`. The final full local split audit is omitted in this
+mode, including when earlier scenes are moved after their capture completes.
+An existing `split_audit.json` is not refreshed. Training still requires local
+training/validation images and its normal verification.
+
+Use this flag on the next capture launch; an already-running Python process
+keeps its original behavior. Move only completed, verified clips/scenes after
+the launcher prints their `Completed ... frames` line. Preview/pilot stages
+require their local images and do not accept this flag. The report-capture tool
+accepts it for its normal capture stage as well.
+
+### Automatically archive each completed scene to Backblaze B2
+
+**No installation or administrator access is required.** A `b2://BUCKET/PREFIX`
+destination uses Python's standard library and the
+[B2 Native API](https://www.backblaze.com/apidocs/b2-upload-file) directly, with
+streaming HTTPS uploads. Create a private B2 bucket and an application key with
+`listFiles` and `writeFiles` capabilities. A bucket-restricted key can resolve
+its bucket directly from authorization; an unrestricted key also needs
+`listBuckets` to find the bucket by name.
+
+Set `B2_APPLICATION_KEY_ID` (the key ID) and `B2_APPLICATION_KEY` (the secret
+application key) in your shell environment. The prompts below avoid storing
+the values in shell history. Credentials stay out of dataset configs, command
+arguments, receipts, and logs; never paste them into the repository or chat.
+
+```bash
+read -rp "B2 key ID: " B2_APPLICATION_KEY_ID
+read -rsp "B2 application key: " B2_APPLICATION_KEY
+printf '\n'
+export B2_APPLICATION_KEY_ID B2_APPLICATION_KEY
+
+# Check your bucket/key before stopping the existing capture. This check does
+# not upload/delete files or acquire the capture lock. Replace YOUR_BUCKET.
+/tmp/ntasad-venv/bin/python tools/check_b2_archive.py b2://YOUR_BUCKET/denoiser-v4
+
+DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
+  ./tools/run_dataset_background.sh \
+  --plan dataset_generation/plan-v4.json \
+  --renderer /tmp/ntasad-capture-build/dataset_capture \
+  --b2-archive b2://YOUR_BUCKET/denoiser-v4
+```
+
+`--b2-archive` checks access before capture and implies `--skip-missing-rendered`.
+Environment variables are inherited by the background job; set them again if
+resuming from a fresh SSH session. The native client retries temporary failures,
+reopens interrupted uploads at byte zero, and renews expired account/upload
+tokens during multi-day captures. Matching remote files are reused. Uploads are
+streamed one file at a time, without buffering a whole EXR in memory; the native
+backend supports individual files up to 5 GB, well above the capture size.
+Choose a dedicated prefix for this dataset; the native backend rejects a prefix
+containing a different capture lock. Use different prefixes for report captures
+or other dataset versions.
+
+For compatibility, the earlier `--b2-archive REMOTE:BUCKET/PREFIX` form still uses
+an existing rclone configuration. Only that legacy form needs rclone installed;
+`--rclone /path/to/rclone` selects its executable. The `b2://` form always uses
+Python directly and ignores `--rclone`.
+
+At the end of each scene, the generator requires every planned clip/frame in
+that scene to be complete. This also applies when `--groups` or `--frame-range`
+selects a subset: an unfinished scene is kept locally. The generator then:
+
+1. Checks local EXRs against their manifest SHA256 checksums.
+2. Copies EXRs, frame manifests, scene logs, dataset sidecars and capture configs
+   to B2, preserving their paths beneath the chosen prefix.
+3. Fetches remote SHA1 hashes and requires an exact match for every uploaded
+   file. An absent/unsupported checksum fails verification; size alone does not
+   count. This uses remote metadata rather than downloading the EXRs again.
+4. Writes `b2-archives/SCENE.json` with the destination, provenance hash and file
+   inventory, and uploads/verifies that receipt too.
+5. Removes only that scene's local EXRs, retaining manifests, logs, configs and
+   archive receipts. Capture then proceeds to the next scene.
+
+An upload/check failure stops the generator before removing local EXRs. Resume
+the same command after resolving the issue; matching uploads are reused. If
+interrupted during local deletion, the verified receipt makes the remaining
+cleanup resumable. Fully archived scenes skip missing EXRs on subsequent runs
+without downloading or revalidating them. Keep `--b2-archive` (or at least
+`--skip-missing-rendered`) on later launches. Existing local scenes from before
+this feature are archived as they are encountered during resume. Files moved
+manually without an archive receipt must be restored locally before this mode
+can archive the full scene.
+
+To restore the dataset onto a training machine that has rclone configured, the
+optional command below works with archives made by either backend. The B2 web
+console can also download files; rclone is not required on the generation host.
+
+```bash
+rclone copy b2:YOUR_BUCKET/denoiser-v4 ../dataset/denoiser-v4 --checksum
+```
+
+### Automatically archive each completed scene to Cloudflare R2
+
+R2 uses the same completed-scene upload/verify/delete flow, directly from
+Python's standard library. No rclone, SDK installation or administrator access
+is needed. B2 behavior and existing B2 launch commands remain available.
+
+In Cloudflare, create a **Standard** R2 bucket and an **Object Read & Write** S3
+API token scoped to that bucket. Use the S3 **Access Key ID** and **Secret Access
+Key**, along with your Cloudflare **Account ID**. These are described in the
+[R2 S3 setup instructions](https://developers.cloudflare.com/r2/get-started/s3/);
+the token is not the general Cloudflare API bearer token.
+
+For local settings in a Python file, fill the four empty values at the top of
+`tools/generate_r2_dataset.py`:
+
+```python
+ACCOUNT_ID = "your-cloudflare-account-id"
+ACCESS_KEY_ID = "your-r2-s3-access-key-id"
+SECRET_ACCESS_KEY = "your-r2-s3-secret-access-key"
+BUCKET_NAME = "your-r2-bucket"
+```
+
+`PREFIX` defaults to `denoiser-v4`. Alternatively, leave the credential fields
+empty and export `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`,
+then pass `--r2-archive r2://BUCKET/denoiser-v4`. For jurisdiction-specific
+buckets, set `ENDPOINT_URL` in the launcher or `R2_ENDPOINT_URL` in the
+environment to the bucket's HTTPS S3 endpoint, without the bucket/path.
+
+```bash
+# Reads the optional settings above. No capture lock, uploads or deletes.
+/tmp/ntasad-venv/bin/python tools/check_r2_archive.py
+
+# If using environment credentials instead, provide the destination explicitly:
+/tmp/ntasad-venv/bin/python tools/check_r2_archive.py r2://YOUR_BUCKET/denoiser-v4
+
+# After stopping the previous capture, resume using the dedicated R2 launcher:
+DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
+  ./tools/run_dataset_background.sh r2 \
+  --plan dataset_generation/plan-v4.json \
+  --renderer /tmp/ntasad-capture-build/dataset_capture \
+  --output ../dataset/denoiser-v4
+```
+
+The `r2` launcher mode bypasses `tools/generate_dataset.py`, including any
+hardcoded B2 settings there. The access check verifies authentication and bucket
+listing without uploading a probe file; upload credentials must grant Object
+Read & Write, not read-only access. Account creation, bucket creation and key
+setup are separate from the capture scripts.
+
+The client signs requests with AWS Signature V4, streams single-PUT uploads,
+sends content checksums and explicitly selects `STANDARD` storage. Before
+deleting anything locally, it checks the server's full-file MD5 ETags and sizes
+against the local inventory, then uploads and verifies `r2-archives/SCENE.json`.
+Receipts bind to the R2 account endpoint as well as bucket/prefix, preventing a
+same-named bucket in another account from being mistaken for the archive.
+Multipart/absent ETags do not count as full-file checksums. Single files up to
+5 GB are supported, well above these captures' sizes. Temporary failures retry
+with a fresh signature and the input file reopened at byte zero.
+
+Retained manifests/configs, collision detection, interrupted-deletion recovery,
+and skipping already-archived frames work as for B2. `last-capture.json` reports
+`r2_archived_scenes` and `r2_destination`. Choose one archive provider per capture
+launch; `--b2-archive` and `--r2-archive` are mutually exclusive. Keep
+`--r2-archive` (automatically added by the configured R2 launcher) on resume.
+An already-running process keeps its original provider until restarted.
+
+Switching providers does not migrate objects: scenes whose local EXRs were
+already removed after B2 upload remain in B2. Restore/copy those scenes before
+expecting a complete dataset in R2. This integration handles generation and
+archiving; the separate training cache/streaming loader is not implemented yet.
+
+### Stop an existing capture and resume with archiving
+
+Completed frame directories are published atomically and remain usable after
+interruption. Work inside the currently rendering frame is lost; that frame is
+rendered again on resume. Keep the renderer binary, assets, plan and output path
+the same. No renderer rebuild is required for these Python-side features.
+
+For a job started **before** this change, stopping only its Python PID can leave
+its renderer running. Find the generator PID in the background launcher's PID
+file, inspect its child, and stop the `dataset_capture` child first:
+
+```bash
+# Replace JOB.pid with the PID file printed by your original launch.
+JOB_PID=$(cat ../dataset/jobs/JOB.pid)
+ps -p "$JOB_PID" -o pid,etime,args
+pgrep -a -P "$JOB_PID"
+pkill -TERM -P "$JOB_PID" -x dataset_capture
+```
+
+The original generator exits on the renderer failure. Confirm both processes
+have exited before launching the new command; if the child had just finished,
+inspect the generator again rather than starting an overlapping capture.
+After this change, `kill -TERM GENERATOR_PID` also terminates and reaps the active
+renderer/upload subprocess. Avoid `kill -9` for routine stops because it bypasses
+that cleanup. These commands are instructions; changing the code does not stop
+or restart a running capture automatically.
+
 The raw 22-channel float32/uint32 payload is about 174 MiB/frame, or 318 GiB for
 all 1872 frames before lossless EXR compression. Actual disk use and render time
 must be measured from the pilot. The report dataset requires separate space.
