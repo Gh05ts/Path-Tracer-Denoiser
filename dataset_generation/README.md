@@ -6,32 +6,31 @@ the package installed (`pip install -e '.[train,test]'`). The environment used f
 local checks is `/tmp/ntasad-venv/bin/python`; replace `python3` with your activated
 environment's Python when needed.
 
-`plan-v3.json` is the editable source of truth. It uses 1920×1080 captures, eight
+`plan-v4.json` is the editable source of truth. It uses 1920×1080 captures, eight
 frames per clip, independent 4-SPP noisy inputs and 1024-SPP references, depth 12,
 Russian roulette from depth 5, 256×256 render tiles, caustics disabled, and an
 explicit `indirect_radiance_clamp` of **10** for both noisy inputs and references.
 Adaptive sampling remains deferred.
 
-V3 keeps v2 cameras, motion profiles, sample IDs and scene splits, but uses the
-corrected integrator version **11**, including the glass/GGX, glTF material,
-reflective-normal and indirect-radiance clamp changes. The interrupted v2 captures remain in `../dataset/denoiser-v2`
-and must not be mixed into v3. See the renderer
+V4 retains v3's corrected integrator **11**, glass/GGX and glTF material fixes,
+and clamp 10, while expanding viewpoints and increasing medium/fast motion.
+The paused v3 output remains untouched in `../dataset/denoiser-v3` with two
+completed BMW frames. Its original plan remains `plan-v3.json`; resume it only
+with that explicit plan. V4 uses a separate dataset ID, output directory and
+sample range, so its changed trajectories cannot mix with the paused captures.
+See the renderer
 [diagnosis](../../Wavefront-Path-Tracer/docs/diagnostics/bmw-hdr-fireflies/README.md).
 
-**Current status (2026-11-10):** the user accepted clamp 10 and authorized a fresh
-fixed-sampling dataset. The old two-frame integrator-4 v3 pilot is preserved in
-`../dataset/archive/denoiser-v3-before-clamp-2026-11-10`. The active
-`../dataset/denoiser-v3` is reset to zero frames, with all 126 configs and the
-split prepared and locked to the validated integrator-11 binary. Generation is
-ready to launch using the command below. Training remains stopped. References
-retain the declared fixed-budget status; clamping does not confer convergence
-qualification.
+**Current status (2026-11-10):** all 234 v4 configs and the split are prepared
+and locked to the checked integrator-11 renderer. Bulk generation and training
+remain stopped. References retain their declared
+fixed-budget status; clamping does not confer convergence qualification.
 
 | Partition | Scenes | Clips | Frames |
 | --- | --- | ---: | ---: |
-| Train | BMW, Bistro, Living Room, Breakfast Room, Dragon | 90 | 720 |
-| Validation | Bathroom, Classroom2 | 24 | 192 |
-| Final evaluation | Sponza | 12 | 96 |
+| Train | BMW, Bistro, Living Room, Breakfast Room, Dragon | 180 | 1440 |
+| Validation | Bathroom, Classroom2 | 36 | 288 |
+| Final evaluation | Sponza | 18 | 144 |
 
 This assigns Bathroom and Classroom to validation and reserves Sponza for final
 evaluation. A scene and all its camera clips belong to one partition. Neither
@@ -39,25 +38,28 @@ model trains on validation or test scenes. Training and checkpoint selection do
 not load test pixels. Camera previews may display the test scene for framing;
 do not use its denoising results to tune hyperparameters.
 
-Each training scene has three anchors × six motions; held-out scenes have two
-anchors × six motions. Motions are lateral linear translation, forward/backward
-dolly, wave translation, a small circle in the camera's right/up plane, an orbit
-arc about its focus, and pan/tilt. The orbit is a small arc, not a full revolution
-inside a room. Each clip is a continuous motion, without camera cuts. Local
-motion scales are deliberately smaller in confined interiors. Source glTF camera
-transforms seed the anchors; Dragon uses the existing Cornell staging and Sponza
-uses an explicit atrium camera. Research interiors/BMW use their supplied HDR
-lighting, Bistro uses its imported lights, and Sponza retains its top light.
+Each training scene has **six anchors × six motions**; held-out scenes have
+**three anchors × six motions**. V3's original nearby anchors are retained;
+new anchors have explicit world-space `camera` poses in other parts of the scene.
+BMW adds views around the car, Bistro moves along the street, interiors add
+translated/reoriented views, Dragon adds side/elevated views, and Sponza adds a
+view from the opposite end. An anchor's optional `camera` supplies its own
+position, target, up and FOV; `offset` and `yaw_degrees` remain supported relative
+to that camera. Without an explicit camera, legacy plans use the scene camera.
 
-V2 cycles **slow (0.6×), medium (1.4×), and fast (2.8×)** motion across anchors
-and motion types. Every training motion appears at all three speeds across the
-three viewpoints; this keeps the original 18 clips per training scene. Multipliers
-scale the scene's translation/arc/pan amplitude over the same eight frames, not
-the playback speed of an identical path. Interiors retain smaller base distances.
-These are our engineering choices, not camera speeds specified by the paper.
-The original plan (`plan.json`) and its completed two-frame BMW pilot are preserved
-in `../dataset/denoiser-v1`. V2 uses separate IDs/sample ranges/output, and never
-mixes its new trajectories into that pilot.
+Motions are lateral linear translation, forward/backward dolly, wave translation,
+a small circle in the camera's right/up plane, an orbit arc about its focus,
+and pan/tilt. Each eight-frame clip is continuous, without camera cuts. Local
+motion scales stay smaller in confined interiors. Research interiors/BMW use
+their supplied HDR lighting, Bistro uses its imported lights, and Sponza retains
+its top light.
+
+V4 cycles **slow (0.6×), medium (1.8×), and fast (3.6×)** across anchors and
+motion types. Medium and fast are approximately **29% faster** than v3's 1.4×
+and 2.8×; slow is unchanged. Each training motion appears at every speed from
+two viewpoints. Multipliers scale translation/arc/pan amplitude over the same
+eight frames, not playback speed. These are engineering choices, not camera
+speeds specified by the paper. V1–v3 plans and outputs remain available separately.
 
 ## Inspect and pilot
 
@@ -71,7 +73,7 @@ persistent directory rather than depending on `/tmp` surviving a reboot.
 # can bind this planned output to its renderer binary.
 python3 tools/generate_dataset.py --stage plan
 
-# Check all planned cameras of all 126 clips, pooled by scene to avoid
+# Check all planned cameras of all 234 clips, pooled by scene to avoid
 # repeatedly loading Bistro. Outputs are diagnostic, never training captures.
 python3 tools/check_dataset_cameras.py \
   --renderer /tmp/ntasad-capture-build/dataset_capture
@@ -82,16 +84,18 @@ python3 tools/generate_dataset.py --stage preview \
 
 # Two real 1080p frames, 4+1024 SPP. Reused by the later complete capture.
 python3 tools/generate_dataset.py --stage pilot --scenes bmw \
-  --frame-range 0 2 --output ../dataset/denoiser-v3 \
+  --frame-range 0 2 --output ../dataset/denoiser-v4 \
   --renderer /tmp/ntasad-capture-build/dataset_capture
 
 # Extend that exact pilot to a full eight-frame clip; five-frame windows can now
 # be checked. Omitting --scenes selects BMW and Breakfast Room for the pilot.
 python3 tools/generate_dataset.py --stage pilot --scenes bmw \
-  --output ../dataset/denoiser-v3 \
+  --output ../dataset/denoiser-v4 \
   --renderer /tmp/ntasad-capture-build/dataset_capture
 ```
 
+The current `../dataset/denoiser-v4-cameras/viewpoint-overview.png` compares
+original and added viewpoints across all scenes (4-SPP diagnostics).
 `tools/check_dataset_cameras.py` saves one PNG sheet per scene and `camera-checks.json` with
 near-surface warnings. These are framing checks, not a proof that an entire
 continuous path is collision-free. Diagnostic sheets can adjust exposure for
@@ -117,11 +121,11 @@ redirects stdin/stdout/stderr, and prints its PID and log path:
 ```bash
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh \
-  --plan dataset_generation/plan-v3.json \
+  --plan dataset_generation/plan-v4.json \
   --renderer /tmp/ntasad-capture-build/dataset_capture
 ```
 
-That command captures the complete plan in `../dataset/denoiser-v3`. It works in one
+That command captures the complete plan in `../dataset/denoiser-v4`. It works in one
 go and skips verified completed frames when rerun. It survives SSH hangups while
 the host/process remains running; after a reboot or crash, start it again.
 The background worker was explicitly tested by sending SIGHUP during a plan job.
@@ -156,8 +160,8 @@ preserved under `recovery.partial/` and the unfinished frame is rendered again.
 Sampling within a partly rendered frame is not checkpointed. Completed frames
 remain usable even if the process dies before the clip finishes.
 
-The raw 22-channel float32/uint32 payload is about 174 MiB/frame, or 171 GiB for
-all 1008 frames before lossless EXR compression. Actual disk use and render time
+The raw 22-channel float32/uint32 payload is about 174 MiB/frame, or 318 GiB for
+all 1872 frames before lossless EXR compression. Actual disk use and render time
 must be measured from the pilot. The report dataset requires separate space.
 Local capture uses the renderer task API; this launcher does not distribute
 capture or resume the renderer's per-sample local/distributed checkpoint files.
@@ -180,7 +184,7 @@ Run it separately before relying on the references for reported accuracy:
 
 ```bash
 python3 -m wavefront_denoiser reference-convergence \
-  ../dataset/denoiser-v3/reference-check-plan.json ../dataset/denoiser-v3-reference-check \
+  ../dataset/denoiser-v4/reference-check-plan.json ../dataset/denoiser-v4-reference-check \
   --capture-executable /tmp/ntasad-capture-build/dataset_capture \
   --renderer-root ../Wavefront-Path-Tracer
 ```
@@ -200,53 +204,59 @@ cameras, frame indices, scene/render fingerprints, environment and integrator
 settings, sample allocation and image SHA-256. No PNG or tone-mapped image is
 used as a training target.
 
-Generated `split.json`, `train-spatial.json` and `train-recurrent.json` can be
-consumed directly by the denoiser. The recurrent configuration uses five-frame
-windows, shared 128×128 random crops/flips/90-degree rotations across all frames,
+Generated `split.json` and **`train.json`** feed one spatial/temporal NTASAD
+U-Net. Spatial kernels at three scales, temporal history filtering, and blend
+weights train jointly; there is no separate spatial model or pretraining stage.
+The adaptive sampler remains a future second network.
+
+Training uses five-frame windows, one noisy initialization plus four recurrent
+steps, and shared 128×128 crops/flips/90-degree rotations across all frames,
 references and guides. Motion-vector components rotate/flip with image axes;
 world normal components retain their coordinates. Crop borders invalidate
 unavailable history. Full frames are decoded one at a time and cropped before
-stacking tensors, bounding host memory. There are four overlapping five-frame
-windows in each eight-frame clip and four random patches per window per epoch.
+stacking tensors. Each eight-frame clip supplies four five-frame windows, with
+four random patches per window per epoch.
 
-Recurrent checkpoint selection uses five deterministic 256×256 crops (center
-and corners) per validation window, without augmentation. This is a crop-based
-validation loss, not a full-1080p evaluation metric. Full-frame validation remains
-the default for older configurations. The spatial model uses 128×128 training
-patches and full-image validation. Initial epochs are 40 spatial / 1000 recurrent;
-edit the generated training JSONs to change them. Capture resume preserves those
-training JSON edits. Full-resolution recurrent report inference is a separate
-runtime/memory task; this generator does not add tiled recurrent inference.
+Checkpoint selection uses the same final-frame spatial plus final-difference
+temporal L1 loss on five fixed 256×256 validation crops per window. These are
+crop-based validation losses, not full-1080p evaluation metrics. Defaults are
+Xavier initialization, Adam at 0.001, 48 base channels and 1000 epochs. Edit the
+single `train.json` to change settings; capture resume preserves edits.
 
 ```bash
-# Fails if train/validation clips are incomplete. Fresh random weights by default.
-# Writes separate spatial/ and recurrent/ runs; never loads an old model silently.
+# One model, fresh random weights; verifies train/validation without test pixels.
 python3 tools/train_dataset.py --device cuda
 
-# The same training command detached from SSH:
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh train --device cuda
 
-# Either model alone:
-python3 tools/train_dataset.py --models recurrent --device cuda \
-  --output runs/denoiser-v3-recurrent
-
-# Only an explicitly requested recurrent resume loads weights/Adam/RNG state.
-# Increase epochs in the same training config first; use a fresh output directory.
-python3 tools/train_dataset.py --models recurrent --device cuda \
-  --recurrent-resume runs/denoiser-v3-models/recurrent/last.pt \
-  --output runs/denoiser-v3-resumed
+# Explicit resume into a new output; increase epochs in train.json first.
+python3 tools/train_dataset.py --device cuda \
+  --resume runs/denoiser-v4-denoiser/last.pt \
+  --output runs/denoiser-v4-resumed
 ```
 
-Training can begin once all train/validation groups are complete; test groups may
-remain reserved. Default capture generates all three partitions. This setup
-creates capture/training scripts; it does not start bulk generation or production
-training automatically.
+The default run is `runs/denoiser-v4-denoiser/`: `model.pt` is selected on
+validation and `last.pt` resumes optimizer/RNG state at a completed epoch.
+Training can begin once train/validation groups are complete; test may remain
+reserved. This change does not start training automatically.
+
+A capture started before unification can finish unchanged. On the first training
+launch, a missing `train.json` is created after inventory verification; obsolete
+`train-spatial.json`/`train-recurrent.json` sidecars are ignored. Capture locks,
+configs, frame indices, sample allocation and EXR bytes remain intact. The
+training launcher retains its exclusive writer lock, so it cannot start against
+a dataset still being captured.
+
+Still and streaming sequence inference both use this same checkpoint; see the
+[README](../README.md). Sequence initialization follows the paper; the still
+fallback runs only the shared learned spatial branch. The reference runtime
+supports full-frame sequence inference but does not add tiled inference.
 
 ## Separate report references
 
 ```bash
-# Validation + evaluation scenes by default; separate ../dataset/denoiser-v3-reports4096.
+# Validation + evaluation scenes by default; separate ../dataset/denoiser-v4-reports4096.
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh reports \
   --renderer /tmp/ntasad-capture-build/dataset_capture
@@ -280,9 +290,18 @@ so thumbnails can look nearly static. Use the animated albedo guides and motion
 measurements to judge temporal displacement; inspect separate viewpoints to
 judge scene coverage. Increasing motion alone does not replace viewpoint diversity.
 
-Local checks: the relocated v1 pilot resumes by skipping both completed frames;
+Historical v1/v2 checks: the relocated v1 pilot resumes by skipping both completed frames;
 all 1008 v2 camera poses passed the final near-surface check after one Bathroom
 camera adjustment. BMW linear slow/medium/fast clips estimate approximately
 17/39/75 pixels per frame (median frame-p95, scaled to 1080p). The Python suite
 passed 151 tests, with 12 optional tests skipped; camera captures were checked
 separately on the RTX 3090. The moved background launcher passed SIGHUP testing.
+
+
+V4 checks (2026-11-10): all 1872 diagnostic camera poses passed the near-surface
+check with zero flags after Bistro/Bathroom adjustments. The viewpoint overview
+and per-scene sheets are under `../dataset/denoiser-v4-cameras/`. BMW linear
+slow/medium/fast measured about 17/50/96 pixels per frame (median frame-p95 at
+1080p), confirming that slow stayed unchanged and medium/fast increased. Python
+suite: 161 passed, 12 optional tests skipped; final camera-plan tests: 28 passed.
+The paused v3's two completed frames passed their original camera/checksum checks.

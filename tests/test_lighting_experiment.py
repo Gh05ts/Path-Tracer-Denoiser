@@ -73,14 +73,6 @@ def test_paired_analysis_keeps_seeds_matched():
         study.paired_comparison(records[:-1], [7, 19], ['small'])
 
 
-def test_protocol_drift_stops_before_model_or_probe_access(tmp_path, protocol):
-    path = write_config(tmp_path, protocol)
-    study.write_json(tmp_path/'dataset.json', {'protocol_sha256': 'stale'})
-    with pytest.raises(ValueError, match='protocol changed'):
-        study.train_and_evaluate(path, tmp_path, 'cpu')
-    assert not (tmp_path/'models').exists()
-
-
 def test_reference_reuse_rejects_changed_calibration_protocol(tmp_path, protocol):
     old = tmp_path/'pilot'
     (old/'reference_convergence/captures').mkdir(parents=True)

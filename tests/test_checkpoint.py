@@ -5,11 +5,10 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from wavefront_denoiser.recurrent import TemporalKernelDenoiser
-from wavefront_denoiser.recurrent_checkpoint import (
-    load_recurrent_checkpoint, restore_recurrent_training, save_recurrent_checkpoint,
+from wavefront_denoiser.model import NTASADDenoiser
+from wavefront_denoiser.checkpoint import (
+    load_checkpoint, restore_training, save_checkpoint,
 )
-from wavefront_denoiser.spatial_checkpoint import load_spatial_checkpoint
 
 
 @pytest.fixture(scope="module")
@@ -36,14 +35,14 @@ def buffers(device, dtype):
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_inference_roundtrip_portable_cpu_weights(tmp_path, device, dtype):
-    model = TemporalKernelDenoiser(4).to(device=device, dtype=dtype).eval()
+    model = NTASADDenoiser(4).to(device=device, dtype=dtype).eval()
     frame = buffers(device, dtype)
     with torch.no_grad():
         expected = model(frame)
     path = tmp_path / "model.pt"
-    save_recurrent_checkpoint(path, model, epoch=3, global_step=12,
+    save_checkpoint(path, model, epoch=3, global_step=12,
                               config={"patch_size": 64}, dataset_split={"train": ["scene_a"]})
-    loaded, payload = load_recurrent_checkpoint(path, device)
+    loaded, payload = load_checkpoint(path, device)
     assert not loaded.training
     assert next(loaded.parameters()).dtype == dtype
     assert payload["epoch"] == 3 and payload["global_step"] == 12
@@ -53,11 +52,9 @@ def test_inference_roundtrip_portable_cpu_weights(tmp_path, device, dtype):
     assert all(value.device.type == "cpu" for value in payload["state_dict"].values())
     with torch.no_grad():
         torch.testing.assert_close(loaded(frame), expected)
-    cpu_model, _ = load_recurrent_checkpoint(path, torch.device("cpu"))
+    cpu_model, _ = load_checkpoint(path, torch.device("cpu"))
     for name, value in model.state_dict().items():
         torch.testing.assert_close(cpu_model.state_dict()[name], value.cpu(), rtol=0, atol=0)
-    with pytest.raises(ValueError, match="Unsupported spatial"):
-        load_spatial_checkpoint(path, torch.device("cpu"))
 
 
 def step(model, optimizer, multiplier):
@@ -73,20 +70,20 @@ def random_values(device, generator):
 
 
 def test_resume_reproduces_rng_optimizer_and_next_update(tmp_path, device):
-    model = TemporalKernelDenoiser(4).to(device)
+    model = NTASADDenoiser(4).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=.003)
     generator = torch.Generator().manual_seed(17)
     step(model, optimizer, 2.)
     path = tmp_path / "last.pt"
-    save_recurrent_checkpoint(path, model, optimizer=optimizer, epoch=2, global_step=7,
+    save_checkpoint(path, model, optimizer=optimizer, epoch=2, global_step=7,
                               generator=generator)
     expected_random = random_values(device, generator)
     step(model, optimizer, expected_random[0])
     expected = {name: value.detach().clone() for name, value in model.state_dict().items()}
-    loaded, payload = load_recurrent_checkpoint(path, device)
+    loaded, payload = load_checkpoint(path, device)
     resumed_optimizer = torch.optim.Adam(loaded.parameters(), lr=.8)
     resumed_generator = torch.Generator().manual_seed(999)
-    progress = restore_recurrent_training(loaded, resumed_optimizer, payload, generator=resumed_generator)
+    progress = restore_training(loaded, resumed_optimizer, payload, generator=resumed_generator)
     assert loaded.training
     assert progress == {"epoch": 2, "global_step": 7}
     assert resumed_optimizer.param_groups[0]["lr"] == .003
@@ -102,82 +99,85 @@ def test_resume_reproduces_rng_optimizer_and_next_update(tmp_path, device):
 
 def test_failed_write_preserves_previous_checkpoint(tmp_path, monkeypatch):
     path = tmp_path / "model.pt"
-    model = TemporalKernelDenoiser(4)
-    save_recurrent_checkpoint(path, model)
+    model = NTASADDenoiser(4)
+    save_checkpoint(path, model)
     previous = path.read_bytes()
     def interrupted_save(payload, stream):
         stream.write(b"interrupted checkpoint")
         raise OSError("simulated interrupted write")
     monkeypatch.setattr(torch, "save", interrupted_save)
     with pytest.raises(OSError, match="interrupted"):
-        save_recurrent_checkpoint(path, model)
+        save_checkpoint(path, model)
     assert path.read_bytes() == previous
     assert list(tmp_path.glob("*.partial")) == []
 
 
 @pytest.mark.parametrize("change, message", [
-    ({"format": "wavefront-spatial-checkpoint"}, "Unsupported recurrent"),
-    ({"version": 9}, "Unsupported recurrent"),
+    ({"format": "wavefront-spatial-checkpoint"}, "Unsupported denoiser"),
+    ({"format": "wavefront-recurrent-checkpoint"}, "Unsupported denoiser"),
+    ({"version": 9}, "Unsupported denoiser"),
     ({"architecture": "other"}, "architecture"),
     ({"feature_version": 99}, "preprocessing"),
     ({"parameter_dtype": "float16"}, "dtype"),
     ({"epoch": -1}, "epoch"),
     ({"state_dict": {}}, "weights"),
+    ({"config": None}, "JSON object"),
+    ({"dataset_split": []}, "JSON object"),
 ])
 def test_incompatible_checkpoints_rejected(tmp_path, change, message):
     path = tmp_path / "model.pt"
-    save_recurrent_checkpoint(path, TemporalKernelDenoiser(4))
+    save_checkpoint(path, NTASADDenoiser(4))
     payload = torch.load(path, weights_only=True)
     payload.update(change)
     torch.save(payload, path)
     with pytest.raises(ValueError, match=message):
-        load_recurrent_checkpoint(path, torch.device("cpu"))
+        load_checkpoint(path, torch.device("cpu"))
 
 
 def test_invalid_weights_and_truncated_file_rejected(tmp_path):
     path = tmp_path / "model.pt"
-    save_recurrent_checkpoint(path, TemporalKernelDenoiser(4))
+    save_checkpoint(path, NTASADDenoiser(4))
     payload = torch.load(path, weights_only=True)
     next(iter(payload["state_dict"].values())).fill_(float("nan"))
     torch.save(payload, path)
     with pytest.raises(ValueError, match="finite"):
-        load_recurrent_checkpoint(path, torch.device("cpu"))
+        load_checkpoint(path, torch.device("cpu"))
     path.write_bytes(b"broken")
-    with pytest.raises(ValueError, match="Invalid recurrent"):
-        load_recurrent_checkpoint(path, torch.device("cpu"))
+    with pytest.raises(ValueError, match="Invalid denoiser"):
+        load_checkpoint(path, torch.device("cpu"))
 
 
 def test_resume_checks_optimizer_groups_and_generator(tmp_path):
-    model = TemporalKernelDenoiser(4)
+    model = NTASADDenoiser(4)
     path = tmp_path / "last.pt"
-    save_recurrent_checkpoint(path, model, optimizer=torch.optim.Adam(model.parameters()),
+    save_checkpoint(path, model, optimizer=torch.optim.Adam(model.parameters()),
                               generator=torch.Generator())
-    loaded, payload = load_recurrent_checkpoint(path, torch.device("cpu"))
+    loaded, payload = load_checkpoint(path, torch.device("cpu"))
     with pytest.raises(ValueError, match="Optimizer type"):
-        restore_recurrent_training(loaded, torch.optim.SGD(loaded.parameters(), lr=.01), payload)
+        restore_training(loaded, torch.optim.SGD(loaded.parameters(), lr=.01), payload)
     with pytest.raises(ValueError, match="ordering"):
-        restore_recurrent_training(loaded, torch.optim.Adam(list(loaded.parameters())[::-1]), payload)
+        restore_training(loaded, torch.optim.Adam(list(loaded.parameters())[::-1]), payload)
     optimizer = torch.optim.Adam(loaded.parameters())
     with pytest.raises(ValueError, match="generator setup"):
-        restore_recurrent_training(loaded, optimizer, payload)
-    restore_recurrent_training(loaded, optimizer, payload, restore_rng=False)
-    save_recurrent_checkpoint(path, model)
-    _, inference = load_recurrent_checkpoint(path, torch.device("cpu"))
+        restore_training(loaded, optimizer, payload)
+    restore_training(loaded, optimizer, payload, restore_rng=False)
+    save_checkpoint(path, model)
+    _, inference = load_checkpoint(path, torch.device("cpu"))
     with pytest.raises(ValueError, match="no resumable"):
-        restore_recurrent_training(loaded, optimizer, inference)
+        restore_training(loaded, optimizer, inference)
 
 
 def test_save_rejects_invalid_progress_metadata_and_foreign_optimizer(tmp_path):
     path = tmp_path / "model.pt"
-    model = TemporalKernelDenoiser(4)
+    model = NTASADDenoiser(4)
     with pytest.raises(ValueError, match="nonnegative"):
-        save_recurrent_checkpoint(path, model, epoch=True)
+        save_checkpoint(path, model, epoch=True)
     with pytest.raises(ValueError, match="finite JSON"):
-        save_recurrent_checkpoint(path, model, config={"loss": float("nan")})
-    other = TemporalKernelDenoiser(4)
+        save_checkpoint(path, model, config={"loss": float("nan")})
+    other = NTASADDenoiser(4)
     with pytest.raises(ValueError, match="outside this model"):
-        save_recurrent_checkpoint(path, model, optimizer=torch.optim.Adam(other.parameters()))
+        save_checkpoint(path, model, optimizer=torch.optim.Adam(other.parameters()))
     with torch.no_grad():
         next(model.parameters()).fill_(float("nan"))
     with pytest.raises(ValueError, match="finite"):
-        save_recurrent_checkpoint(path, model)
+        save_checkpoint(path, model)

@@ -2,7 +2,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from wavefront_denoiser.recurrent import TemporalKernelDenoiser
+from wavefront_denoiser.model import NTASADDenoiser
 from wavefront_denoiser.ntasad_radiance import encode_radiance, decode_radiance
 from wavefront_denoiser.sequences import SequenceDataset
 
@@ -49,7 +49,7 @@ def center_kernels(model):
 
 @pytest.mark.parametrize("shape", [(1, 1), (1, 7), (7, 1), (9, 13), (16, 24)])
 def test_full_model_shapes_hdr_and_backward(shape, device):
-    model = TemporalKernelDenoiser(4).to(device)
+    model = NTASADDenoiser(4).to(device)
     rgb = torch.full((2, 3, *shape), 100., device=device, requires_grad=True)
     output = model(frame(rgb), history=rgb)
     assert output.shape == rgb.shape
@@ -61,7 +61,7 @@ def test_full_model_shapes_hdr_and_backward(shape, device):
 
 
 def test_first_frame_ignores_unavailable_history_and_extra_reference(device):
-    model = center_kernels(TemporalKernelDenoiser(4).to(device))
+    model = center_kernels(NTASADDenoiser(4).to(device))
     rgb = torch.rand(1, 3, 9, 11, device=device) * 20
     buffers = frame(rgb)
     buffers["reference"] = torch.full_like(rgb, float("nan"))
@@ -72,7 +72,7 @@ def test_first_frame_ignores_unavailable_history_and_extra_reference(device):
 
 
 def test_temporal_blend_motion_and_disoccluded_centers(device):
-    model = center_kernels(TemporalKernelDenoiser(4).to(device))
+    model = center_kernels(NTASADDenoiser(4).to(device))
     rgb = torch.full((1, 3, 5, 7), 2., device=device)
     history = torch.arange(7., device=device).expand_as(rgb).contiguous()
     buffers = frame(rgb)
@@ -85,15 +85,36 @@ def test_temporal_blend_motion_and_disoccluded_centers(device):
 
 
 def test_all_invalid_history_matches_spatial_path_with_random_kernels(device):
-    model = TemporalKernelDenoiser(4).to(device)
+    model = NTASADDenoiser(4).to(device)
     buffers = frame(torch.rand(2, 3, 7, 9, device=device))
     buffers["history_valid"].zero_()
     torch.testing.assert_close(model(buffers, torch.rand_like(buffers["radiance"]) * 100),
                                model(buffers, torch.zeros_like(buffers["radiance"])))
 
 
+def test_spatial_fallback_uses_shared_learned_kernels_without_temporal_inputs(device):
+    model = NTASADDenoiser(4).to(device)
+    buffers = frame(torch.rand(1, 3, 9, 11, device=device) * 10)
+    buffers["motion"].zero_()
+    buffers["history_valid"].zero_()
+    expected = model(buffers, torch.zeros_like(buffers["radiance"]))
+    still = {name: value for name, value in buffers.items() if name not in ("motion", "history_valid")}
+    still["reference"] = torch.full_like(buffers["radiance"], float("nan"))
+    actual = model.forward_spatial(still)
+    torch.testing.assert_close(actual, expected)
+    assert not torch.allclose(actual, still["radiance"])
+    actual.mean().backward()
+    assert model.encoder0[0].weight.grad.abs().sum() > 0
+    assert model.coarse_head.weight.grad.abs().sum() > 0
+    assert model.middle_head.weight.grad.abs().sum() > 0
+    assert model.fine_head.weight.grad[:25].abs().sum() > 0
+    assert model.fine_head.weight.grad[25:].abs().sum() == 0
+    with pytest.raises(ValueError, match="N3HW"):
+        model.forward_spatial({})
+
+
 def test_sequence_matches_streaming_resets_without_mutation(device):
-    model = TemporalKernelDenoiser(4).to(device)
+    model = NTASADDenoiser(4).to(device)
     buffers = sequence(torch.rand(2, 4, 3, 9, 11, device=device))
     original_mask = buffers["history_valid"].clone()
     reset = torch.tensor([[0, 0, 1, 0], [0, 1, 0, 0]], device=device)
@@ -113,7 +134,7 @@ def test_sequence_matches_streaming_resets_without_mutation(device):
 
 
 def test_later_frame_gradients_reach_earlier_frames_except_across_reset(device):
-    model = TemporalKernelDenoiser(4).to(device)
+    model = NTASADDenoiser(4).to(device)
     rgb = (torch.rand(2, 3, 3, 8, 8, device=device) + 1).requires_grad_()
     buffers = sequence(rgb)
     reset = torch.zeros(2, 3, device=device, dtype=torch.bool)
@@ -127,6 +148,10 @@ def test_later_frame_gradients_reach_earlier_frames_except_across_reset(device):
         assert torch.isfinite(head.weight.grad).all()
         assert head.weight.grad.abs().sum() > 0
     assert model.encoder0[0].weight.grad.abs().sum() > 0
+    # One loss trains spatial taps, temporal taps, and their blend jointly.
+    assert model.fine_head.weight.grad[:25].abs().sum() > 0
+    assert model.fine_head.weight.grad[25:50].abs().sum() > 0
+    assert model.fine_head.weight.grad[50:].abs().sum() > 0
 
 
 def test_sequence_dataset_dataloader_contract(make_frame, tmp_path, device):
@@ -135,14 +160,14 @@ def test_sequence_dataset_dataloader_contract(make_frame, tmp_path, device):
     dataset = SequenceDataset(tmp_path, length=3)
     batch = next(iter(torch.utils.data.DataLoader(dataset, batch_size=1)))
     buffers = {name: value.to(device) for name, value in batch["buffers"].items()}
-    model = TemporalKernelDenoiser(4).to(device)
+    model = NTASADDenoiser(4).to(device)
     result = model.forward_sequence(buffers)
     assert result.shape == (1, 3, 3, 7, 9)
     assert torch.isfinite(result).all()
 
 
 def test_bad_history_inputs_and_sequence_resets_rejected(device):
-    model = TemporalKernelDenoiser(4).to(device)
+    model = NTASADDenoiser(4).to(device)
     rgb = torch.ones(1, 3, 5, 7, device=device)
     with pytest.raises(ValueError, match="reset on resize"):
         model(frame(rgb), rgb[..., :1, :1])

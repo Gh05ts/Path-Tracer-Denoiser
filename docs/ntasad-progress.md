@@ -11,7 +11,8 @@ copy of the authors' implementation. The denoiser now follows substantially
 more of the published specification than the original compact prototype.
 Adaptive sampling, joint sampler/denoiser training, the Falcor renderer, and
 reproduction of the authors' training scenes remain outside this stage.
-The original residual spatial U-Net is a separate baseline and is unchanged.
+There is now one denoiser model. The original residual spatial U-Net, its trainer
+and checkpoint format have been removed; the adaptive sampler remains deferred.
 No trained NTASAD checkpoint or captured training dataset is included here.
 
 ## Audit
@@ -84,20 +85,22 @@ claimed. Mixed precision and zero-sample adaptive inputs are not implemented.
 ```python
 import torch
 from wavefront_denoiser import SequenceDataset
-from wavefront_denoiser.recurrent import INPUT_CHANNELS, TemporalKernelDenoiser
+from wavefront_denoiser.model import INPUT_CHANNELS, NTASADDenoiser
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dataset = SequenceDataset("data/temporal", length=5, sequence_ids=["camera_train"])
 batch = next(iter(torch.utils.data.DataLoader(dataset, batch_size=1)))
 buffers = {name: batch["buffers"][name].to(device) for name in INPUT_CHANNELS}
-model = TemporalKernelDenoiser().to(device)  # default widths from Figure 3
+model = NTASADDenoiser().to(device)  # default widths from Figure 3
 linear_rgb = model.forward_sequence(buffers)  # N,T,3,H,W
 training_rgb = model.forward_sequence(buffers, transformed=True)
 ```
 
 `model(frame_buffers, history=previous_linear_output)` supports streaming with
 NCHW buffers. `history=None` initializes from current noisy RGB without a network
-pass. `forward_sequence` always begins with fresh history and accepts optional
+pass. `forward_spatial(frame_buffers)` runs the same learned U-Net with zero
+history for a still image; it does not train or load a separate model.
+`forward_sequence` always begins with fresh history and accepts optional
 binary `reset[N,T]` to initialize individual batch items again. There is no hidden
 state or input mutation, and gradients remain attached between frames.
 Width overrides retain the stage topology for tests/ablations; they are not the
@@ -108,14 +111,14 @@ paper's default widths. The example above constructs an untrained model.
 After creating completed camera trajectories and editing their sequence IDs:
 
 ```bash
-python -m wavefront_denoiser train-recurrent \
-  configs/recurrent_train.json runs/temporal-first --device auto
-python -m wavefront_denoiser train-recurrent \
-  configs/recurrent_train.json runs/temporal-resumed --device auto \
+python -m wavefront_denoiser train \
+  configs/train.json runs/temporal-first --device auto
+python -m wavefront_denoiser train \
+  configs/train.json runs/temporal-resumed --device auto \
   --resume runs/temporal-first/last.pt
 ```
 
-`configs/recurrent_train.json` is a template: its dataset path and sequence IDs
+`configs/train.json` is a template: its dataset path and sequence IDs
 must match captures that have not yet been generated. Inputs and references are
 paired captures, currently uniform positive SPP. Crop size must fit the images.
 Each training access selects one shared crop/augmentation for the entire window;
@@ -126,8 +129,9 @@ same final-frame/final-difference loss. `validation_patch_size` optionally selec
 deterministic center/corner crops, with `validation_crops_per_window` from 1–5.
 The new 1080p dataset configuration uses five 256-pixel validation crops to bound
 GPU memory; those losses are crop metrics, not full-resolution evaluation scores.
-It does not yet perform long-video metric
-aggregation. Training and validation IDs are explicit and disjoint. For strict
+Full-sequence evaluation streams the selected clips, excludes noisy initialization
+frames, and reports HDR image metrics plus transformed-domain temporal L1.
+Training and validation IDs are explicit and disjoint. For strict
 whole-scene separation, supply `split_manifest` instead of manual IDs; the existing
 metadata audit and declared reference policy are enforced without loading test
 pixels. Manual IDs alone do not establish scene independence.
@@ -145,25 +149,26 @@ validation selection are implementation choices where the paper gives no detail.
 
 ## Checkpoints
 
-`recurrent_checkpoint` uses the separate `wavefront-recurrent-checkpoint` format.
-The architecture is now `ntasad_uniform_unet_v2`, feature version 2. Earlier
-compact v1 recurrent checkpoints are rejected rather than silently changing
-preprocessing. Spatial checkpoints retain their existing behavior.
+`checkpoint` uses one `wavefront-denoiser-checkpoint` format for training,
+still inference and streaming sequence inference.
+The architecture is now `ntasad_spatiotemporal_unet_v1`, feature version 2.
+Retired spatial and recurrent checkpoint formats are rejected. Start this
+unified model from scratch.
 
 ```python
-from wavefront_denoiser.recurrent_checkpoint import (
-    save_recurrent_checkpoint, load_recurrent_checkpoint, restore_recurrent_training,
+from wavefront_denoiser.checkpoint import (
+    save_checkpoint, load_checkpoint, restore_training,
 )
 
-save_recurrent_checkpoint(
+save_checkpoint(
     "runs/temporal/last.pt", model, optimizer=optimizer,
     epoch=completed_epochs, global_step=completed_steps,
     config=config, dataset_split=split_audit, generator=loader_generator,
 )
-model, metadata = load_recurrent_checkpoint("runs/temporal/last.pt", device)
+model, metadata = load_checkpoint("runs/temporal/last.pt", device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 loader_generator = torch.Generator()
-progress = restore_recurrent_training(model, optimizer, metadata, generator=loader_generator)
+progress = restore_training(model, optimizer, metadata, generator=loader_generator)
 ```
 
 Weights are stored on CPU and loaded with restricted `weights_only=True`
@@ -538,3 +543,105 @@ Dataset planning/resume, reference-convergence, frame, sequence and split checks
 production/report configs, invalid clamp settings and refusing mismatched
 completed-frame metadata. Renderer code was unchanged in this reset; the
 existing integrator-11 validation records all 18 renderer tests passing.
+
+
+## 2026-11-10: Faster camera profiles and expanded viewpoints (v4)
+
+The paused v3 generation produced two complete BMW frames. Both were verified
+against their original v3 camera/settings and EXR checksums and remain untouched.
+The renderer capture tool already accepts arbitrary per-frame camera poses and
+preserves the preceding camera for motion guides, so no renderer changes were
+needed for this adjustment.
+
+The default is now `dataset_generation/plan-v4.json`, outputting to
+`../../dataset/denoiser-v4`. Slow remains 0.6×; medium is 1.8× and fast 3.6×,
+approximately 29% above v3's medium/fast amplitudes over the same eight frames.
+Anchors can now supply an explicit world-space `camera` (position, target, up,
+FOV), while legacy offsets/yaw continue to use the original scene camera.
+Training scenes retain their three nearby views and add three separated views;
+held-out scenes add one view each, for three anchors. All six motions remain
+continuous within each clip. Training grows from 90 clips / 720 frames to
+180 clips / 1440 frames; validation has 36 clips / 288 frames and Sponza test has
+18 clips / 144 frames. Total: 234 clips / 1872 frames.
+
+V4 retains 1080p, 4+1024 SPP, integrator 11, clamp 10, depth 12, caustics off,
+and the independent scene split. Sample allocation starts at 700,000,000,
+after v3 and below the independent convergence-replica range at 1,000,000,000.
+Report references retain identical cameras/input sample IDs. Production configs,
+split and training configs are prepared and locked to the checked binary.
+No v4 production captures or training were started.
+
+All 1872 low-resolution diagnostic poses passed the final near-surface check
+with zero flags. Earlier Bistro/Bathroom collisions were corrected before this
+final sweep; the initial v4 diagnostic/config drafts remain under
+`../../dataset/archive/denoiser-v4*-draft-2026-11-10`. Framing checks do not prove
+that every point between discrete cameras is collision-free. Diagnostic sheets,
+albedo/radiance motion GIFs and motion summaries are under
+`../../dataset/denoiser-v4-cameras`; `viewpoint-overview.png` compares all anchor
+positions. BMW linear clip median frame-p95 motion at 1080p measured approximately
+17 / 50 / 96 pixels per frame (v3: 17 / 39 / 75).
+
+Validation: Python suite 161 passed, 12 optional tests skipped; targeted dataset
+generation tests 28 passed after the final camera adjustments. Historical v1–v3
+plans remain unchanged and explicit `--plan dataset_generation/plan-v3.json`
+continues to target the paused v3 output. Reference quality remains the declared
+fixed-budget status; this change does not qualify convergence.
+
+
+## 2026-11-10: One unified spatial/temporal denoiser
+
+Rechecked the main paper, Figure 3 and sections 2.1–2.2. The two networks in
+NTASAD are the adaptive sampler and the denoiser; spatial and temporal kernel
+prediction belong to one denoiser. The existing recurrent prototype already
+contained that shared network, while the dataset launcher still trained the
+older independent residual spatial baseline as a second model.
+
+The active implementation is now `model.NTASADDenoiser`, with one `training`
+module, `checkpoint` module, and `wavefront-denoiser-checkpoint` format. The
+residual spatial model/trainer/checkpoint code and obsolete model configs were
+removed. Old spatial/recurrent checkpoint formats are deliberately unsupported;
+the next production model starts fresh. Historical lighting-study model training
+was retired with its baseline; its capture preparation and paired-result analysis
+remain available. Historical reports/artifacts were not used as initialization.
+
+The U-Net shares its encoder/decoder across three spatial 5×5 filters, one temporal
+5×5 filter and learned blends. It retains Figure 3's reconstructed widths/depth,
+15 guide/history/noisy features, bilinear reprojection, transformed-domain
+recurrence, one noisy warm-up frame plus four learned steps, and final-frame
+spatial L1 plus final-difference temporal L1, weighted equally. A still-image
+fallback disables history and uses these same learned spatial kernels. It is
+an inference mode, not another model or separate spatial pretraining stage.
+The paper's under-specified operator choices and parameter-count discrepancy
+remain documented above; unification does not establish exact author-code or
+image-quality equivalence.
+
+The public `train` command and `tools/train_dataset.py` now train one model.
+Dataset preparation writes only `train.json`, defaulting to Xavier initialization,
+Adam 0.001, 1000 epochs, 128-pixel shared training crops and fixed 256-pixel
+validation crops. The launcher defaults to `runs/denoiser-v4-denoiser/`, supports
+explicit `--resume`, and verifies train/validation before touching training data.
+A capture launched before this change can finish with its existing sidecars;
+the first training launch creates a missing `train.json` and ignores obsolete
+sidecars. No active capture output, camera plan, renderer binary, frame, or lock
+was modified during model unification. No production training was started.
+
+`denoise`, `denoise-sequence`, and `evaluate` all load the same checkpoint.
+Streaming inference resets history at every clip, labels frame zero as noisy
+initialization, and accepts input-only captures without reference channels.
+Sequence evaluation excludes noisy initialization from image metrics and reports
+transformed-domain temporal finite-difference error on subsequent learned pairs.
+Reserved-test evaluation still requires the frozen split, and changed observed
+inventories are rejected before test pixels are opened. Output names are checked
+and failed inference removes its incomplete staging directory.
+
+Validation covers joint gradients into spatial/temporal kernels and blends,
+shared still-image inference, one-checkpoint train/infer/evaluate integration,
+input-only sequence inference, boundary resets, output cleanup, training-launcher
+migration, test-pixel isolation, and exact epoch-boundary optimizer/RNG resume.
+The adaptive sampler, zero-SPP support and joint sampling optimization remain
+future work; this change makes the implemented denoiser one model.
+
+Final unification checks: **151 tests passed, 12 optional GPU/cross-language
+tests skipped** on CPU. CLI help exposes one trainer and both inference modes;
+the source contains one model class and one trainer. The default network retains
+1,114,311 parameters.

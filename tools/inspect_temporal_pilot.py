@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 
 from wavefront_denoiser.frames import load_frame
 from wavefront_denoiser.sequences import SequenceDataset
-from wavefront_denoiser.recurrent_data import RecurrentPatchDataset
+from wavefront_denoiser.sequence_data import SequencePatchDataset
 
 
 def motion_error(frame):
@@ -56,7 +56,7 @@ def inspect(root):
         frames = [load_frame(path) for path in paths]
         group = f"ntasad_pilot_{scene}_00"
         sequence = SequenceDataset(directory, length=5, sequence_ids=[group])
-        patches = RecurrentPatchDataset(directory, sequence_ids=[group], patch_size=128)
+        patches = SequencePatchDataset(directory, sequence_ids=[group], patch_size=128)
         if len(sequence) != 4 or len(patches) != 4:
             raise ValueError("Expected four five-frame windows")
         for i in range(4):

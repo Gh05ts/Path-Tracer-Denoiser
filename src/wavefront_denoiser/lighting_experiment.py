@@ -1,7 +1,6 @@
 """Matched-budget within-scene lighting ablation; never an independent scene test."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -11,8 +10,7 @@ import subprocess
 import numpy as np
 
 from .frames import load_frame, read_manifest
-from .spatial_io import file_sha256
-from .spatial_metrics import image_metrics, mean_metrics
+from .image_io import file_sha256
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -274,119 +272,6 @@ def prepare_experiment(config_path: str | Path, output: str | Path, executable: 
              "capture_executable_sha256": file_sha256(executable)}
     write_json(output / "dataset.json", index)
     return index
-
-
-def evaluate_conditions(model, paths_by_condition: dict[str, list[Path]], device) -> dict:
-    from .spatial_training import predict_radiance
-    results = {}
-    for condition, paths in paths_by_condition.items():
-        rows = []
-        for path in paths:
-            frame = load_frame(path)
-            prediction = predict_radiance(model, frame.buffers, device)
-            reference = frame.buffers["reference"]
-            valid = frame.buffers["guide_valid"][..., 0] == 1
-            row = {"manifest": str(path), "input": image_metrics(frame.buffers["radiance"], reference),
-                   "denoised": image_metrics(prediction, reference)}
-            if valid.any():
-                row["surface_input"] = image_metrics(frame.buffers["radiance"][valid], reference[valid])
-                row["surface_denoised"] = image_metrics(prediction[valid], reference[valid])
-            rows.append(row)
-        results[condition] = {"images": rows, "input_mean": mean_metrics([r["input"] for r in rows]),
-                              "denoised_mean": mean_metrics([r["denoised"] for r in rows])}
-        for key in ("surface_input", "surface_denoised"):
-            present = [row[key] for row in rows if key in row]
-            if present:
-                results[condition][key + "_mean"] = mean_metrics(present)
-    return results
-
-
-def train_and_evaluate(config_path: str | Path, output: str | Path, device_name: str = "auto") -> dict:
-    import torch
-    from .spatial import discover_spatial_frames
-    from .spatial_checkpoint import load_spatial_checkpoint, select_device
-    from .spatial_runtime import denoise_image
-    from .spatial_training import train_spatial
-
-    config_path, output = Path(config_path).resolve(), Path(output).resolve()
-    config = experiment_config(config_path)
-    index = json.loads((output / "dataset.json").read_text())
-    if index["protocol_sha256"] != file_sha256(config_path):
-        raise ValueError("Experiment protocol changed after capture")
-    if (output / "models").exists() or (output / "freeze.json").exists():
-        raise FileExistsError("Models/freeze already exist; never retune after opening probe pixels")
-    for records in index["inventory"].values():
-        for row in records:
-            if file_sha256(output / row["manifest"]) != row["manifest_sha256"]:
-                raise ValueError("Capture manifest changed")
-    device = select_device(device_name)
-    torch.set_num_threads(config["training"]["cpu_threads"])
-    groups = discover_spatial_frames(output / "data")
-    validation = ["validation_" + name for name in config["lighting"]]
-    (output / "models").mkdir()
-    records = []
-    for seed in config["seeds"]:
-        for arm, selected in index["training_groups"].items():
-            training = dict(config["training"], data_root=str(output / "data"), train_sequences=selected,
-                            validation_sequences=validation, seed=seed, num_workers=0)
-            filename = output / "models" / f"{arm}_seed{seed}.json"
-            write_json(filename, training)
-            destination = filename.with_suffix("")
-            print(f"Train {arm}, seed {seed}", flush=True)
-            summary = train_spatial(filename, destination, device_name)
-            checkpoint = destination / "model.pt"
-            records.append({"arm": arm, "seed": seed, "checkpoint": str(checkpoint.relative_to(output)),
-                            "checkpoint_sha256": file_sha256(checkpoint), "epoch": summary["best_epoch"],
-                            "validation": summary["best_validation"]["denoised_mean"]})
-    baseline = None
-    if config["baseline_checkpoint"]:
-        path = (config_path.parent / config["baseline_checkpoint"]).resolve()
-        baseline = {"checkpoint": str(path), "checkpoint_sha256": file_sha256(path)}
-    source_hashes = {path.name: file_sha256(path) for path in Path(__file__).parent.glob("*.py")}
-    freeze = {"format": "wavefront-lighting-freeze", "version": 1,
-              "frozen_at_utc": datetime.now(timezone.utc).isoformat(), "models": records,
-              "protocol_sha256": file_sha256(config_path), "dataset_sha256": file_sha256(output / "dataset.json"),
-              "source_sha256": source_hashes, "probe_pixels_loaded_at_freeze": False,
-              "observed_benchmark_used_for_selection": False, "baseline": baseline,
-              "torch_version": str(torch.__version__), "device": str(device),
-              "selection": "Mean validation log-L1 with noisy-input HDR RMSE guard, shared across lighting conditions"}
-    write_json(output / "freeze.json", freeze)
-    print("All checkpoints frozen; opening probe pixels", flush=True)
-    probes = {name: groups["probe_" + name] for name in config["lighting"]}
-    assert_fixed_guides(list(probes.values()))
-    benchmark = {}
-    if config["observed_benchmark"]:
-        root = (config_path.parent / config["observed_benchmark"]).resolve()
-        benchmark = {"observed_sponza": sorted(root.rglob("manifest.json"))}
-        if not benchmark["observed_sponza"]:
-            raise ValueError("Missing observed benchmark")
-    results = []
-    selected_records = records + ([dict(baseline, arm="existing_v2", seed=None)] if baseline else [])
-    for record in selected_records:
-        path = Path(record["checkpoint"])
-        checkpoint = path if path.is_absolute() else output / path
-        if file_sha256(checkpoint) != record["checkpoint_sha256"]:
-            raise ValueError("Frozen checkpoint changed")
-        model, _ = load_spatial_checkpoint(checkpoint, device)
-        result = dict(record, probe=evaluate_conditions(model, probes, device),
-                      observed_benchmark=evaluate_conditions(model, benchmark, device))
-        results.append(result)
-        # Save one fixed comparison per condition for each checkpoint.
-        for condition, paths in probes.items():
-            denoise_image(checkpoint, paths[0], output / "predictions" / f"{record['arm']}_seed{record['seed']}" / condition, device_name)
-        del model
-    comparison = paired_comparison(results, config["seeds"], list(config["lighting"]))
-    report = {"format": "wavefront-lighting-results", "version": 1,
-              "split_kind": index["split_kind"], "protocol_sha256": index["protocol_sha256"],
-              "freeze_sha256": file_sha256(output / "freeze.json"), "results": results,
-              "paired_comparison": comparison, "probe_used_for_selection": False,
-              "observed_sponza_is_independent_test": False,
-              "interpretation": "Lighting is the intervention; emitter geometry and visibility change, while visible primary surface guides match exactly. Training camera/patch/step budgets match. Three seeds are descriptive, not a statistical significance claim."}
-    for record in selected_records:
-        path = Path(record["checkpoint"])
-        assert file_sha256(path if path.is_absolute() else output / path) == record["checkpoint_sha256"]
-    write_json(output / "report.json", report)
-    return report
 
 
 def paired_comparison(results: list[dict], seeds: list[int], conditions: list[str]) -> dict:

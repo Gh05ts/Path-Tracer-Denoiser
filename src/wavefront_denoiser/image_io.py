@@ -1,4 +1,4 @@
-"""Named EXR spatial inputs and linear RGB output, independent of references."""
+"""Named EXR inputs and linear HDR outputs for the unified denoiser."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .frames import CHANNELS, FrameFormatError, read_manifest
 
 
 @dataclass(frozen=True)
-class SpatialInput:
+class FrameInput:
     source: Path
     buffers: dict[str, np.ndarray]
     sha256: str
@@ -28,11 +28,12 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def load_spatial_input(path: str | Path) -> SpatialInput:
+def load_input(path: str | Path, *, temporal: bool = False) -> FrameInput:
     """Accept a capture directory/manifest or an EXR with spatial input channels.
 
     A standalone EXR needs no reference, geometric normal, motion, or history.
-    Its radiance/guide conventions must match the documented v1 feature format.
+    Temporal inference additionally requires backward motion and history masks.
+    References are optional and are used only for reporting metrics.
     """
     path = Path(path)
     metadata = None
@@ -55,6 +56,8 @@ def load_spatial_input(path: str | Path) -> SpatialInput:
         if metadata and (metadata["width"], metadata["height"]) != (width, height):
             raise FrameFormatError("EXR dimensions disagree with manifest")
         names = ["radiance", "albedo", "normal", "depth", "guide_valid", "sample_count"]
+        if temporal:
+            names += ["motion", "history_valid"]
         reference_present = [name in header["channels"] for name in CHANNELS["reference"]]
         if any(reference_present):
             if not all(reference_present):
@@ -74,7 +77,7 @@ def load_spatial_input(path: str | Path) -> SpatialInput:
             buffers[name] = np.stack(planes, axis=-1)
         if metadata and not (buffers["sample_count"] == metadata["render"]["samples"]).all():
             raise FrameFormatError("Sample counts disagree with manifest")
-        return SpatialInput(path, buffers, digest)
+        return FrameInput(path, buffers, digest)
     finally:
         source.close()
 

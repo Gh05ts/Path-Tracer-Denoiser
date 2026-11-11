@@ -1,5 +1,9 @@
 # Independent spatial baseline: corrected cameras and frozen test
 
+Historical report: the independent spatial model and its training/checkpoint
+commands were retired on 2026-11-10. The current single NTASAD denoiser workflow
+is in [the README](../README.md).
+
 The current checkpoint is `runs/spatial-independent-v2/model.pt`. It is a
 single-frame residual U-Net, not an NTASAD reproduction. The renderer itself
 was not modified for this training experiment.

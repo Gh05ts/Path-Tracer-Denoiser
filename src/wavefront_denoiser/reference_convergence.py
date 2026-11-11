@@ -12,7 +12,7 @@ import numpy as np
 
 from .dataset_splits import read_split_manifest
 from .frames import load_frame
-from .spatial_metrics import image_metrics, mean_metrics
+from .metrics import image_metrics, mean_metrics
 
 
 def convergence_plan(path: str | Path) -> dict:

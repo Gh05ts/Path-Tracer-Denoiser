@@ -17,12 +17,13 @@ import numpy as np
 
 from .dataset_splits import audit_dataset_split
 from .frames import load_frame, read_manifest
+from .training_defaults import dataset_training_config
 
 MOTIONS = ("linear", "dolly", "wave", "circle", "orbit", "pan_tilt")
 PARTITIONS = ("train", "validation", "test")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET_ROOT = PROJECT_ROOT.parent / "dataset"
-DEFAULT_PLAN = PROJECT_ROOT / "dataset_generation" / "plan-v3.json"
+DEFAULT_PLAN = PROJECT_ROOT / "dataset_generation" / "plan-v4.json"
 
 
 def digest(path: Path) -> str:
@@ -60,12 +61,16 @@ def trajectory(scene: dict, anchor: dict, motion: str, count: int = 8, *, motion
         raise ValueError("Need a supported motion and at least five frames")
     if type(motion_multiplier) not in (int, float) or not math.isfinite(motion_multiplier) or motion_multiplier <= 0:
         raise ValueError("Motion multiplier must be finite and positive")
-    camera = scene["camera"]
+    # An anchor can start in another part of the scene with its own framing.
+    # Older plans retain their scene-camera-relative offsets unchanged.
+    camera = anchor.get("camera", scene["camera"])
+    if not 0 < camera["vertical_fov_degrees"] < 179:
+        raise ValueError("Invalid anchor camera FOV")
     origin = np.asarray(camera["position"], dtype=np.float64)
     forward = unit(np.asarray(camera["target"]) - origin)
     right = unit(np.cross(forward, unit(camera["up"])))
     up = unit(np.cross(right, forward))
-    offset = anchor["offset"]
+    offset = anchor.get("offset", [0, 0, 0])
     origin = origin + offset[0]*right + offset[1]*up + offset[2]*forward
     forward = unit(yaw(forward, anchor.get("yaw_degrees", 0)))
     right = unit(np.cross(forward, up))
@@ -266,14 +271,8 @@ def prepare(plan_path: Path, output: Path, configs: dict, executable: Path | Non
     if split_path.exists() and json.loads(split_path.read_text()) != spec:
         raise ValueError("Stored split manifest was modified")
     write_json(split_path, spec)
-    training_configs = {"train-spatial.json": {"split_manifest": "split.json", "require_reference_policy": False,
-        "epochs": 40, "patch_size": 128, "patches_per_frame": 8, "batch_size": 4,
-        "base_channels": 16, "seed": 7}, "train-recurrent.json": {"split_manifest": "split.json", "epochs": 1000,
-        "patch_size": 128, "patches_per_window": 4, "window_length": 5, "batch_size": 4,
-        "base_channels": 48, "validation_patch_size": 256, "validation_crops_per_window": 5, "seed": 7}}
-    for name, config in training_configs.items():
-        if not (output / name).exists():
-            write_json(output / name, config)
+    if not (output / "train.json").exists():
+        write_json(output / "train.json", dataset_training_config())
     if all(len(c["frames"]) == 8 for c in configs.values()):
         cases = []
         for scene in plan["scenes"]:

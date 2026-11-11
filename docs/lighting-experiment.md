@@ -1,5 +1,9 @@
 # Controlled lighting experiment
 
+Historical report: the independent spatial model and its training/checkpoint
+commands were retired on 2026-11-10. The current single NTASAD denoiser workflow
+is in [the README](../README.md).
+
 This experiment tests whether covering explicit area-light noise during training
 helps a fixed spatial denoiser. All interventions use the same demo surface
 geometry/materials and cameras. It compares matched training budgets rather

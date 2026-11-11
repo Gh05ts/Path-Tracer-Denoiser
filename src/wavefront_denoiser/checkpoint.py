@@ -12,10 +12,10 @@ import tempfile
 import numpy as np
 import torch
 
-from .recurrent import ARCHITECTURE, FEATURE_VERSION, TemporalKernelDenoiser
+from .model import ARCHITECTURE, FEATURE_VERSION, NTASADDenoiser
 
 
-CHECKPOINT_FORMAT = "wavefront-recurrent-checkpoint"
+CHECKPOINT_FORMAT = "wavefront-denoiser-checkpoint"
 DTYPES = {"float32": torch.float32, "float64": torch.float64}
 
 
@@ -76,7 +76,7 @@ def _rng_state(generator: torch.Generator | None) -> dict:
             "generator": generator.get_state() if generator is not None else None}
 
 
-def save_recurrent_checkpoint(path: str | Path, model: TemporalKernelDenoiser, *,
+def save_checkpoint(path: str | Path, model: NTASADDenoiser, *,
                               optimizer: torch.optim.Optimizer | None = None,
                               epoch: int = 0, global_step: int = 0,
                               config: dict | None = None, dataset_split: dict | None = None,
@@ -87,8 +87,8 @@ def save_recurrent_checkpoint(path: str | Path, model: TemporalKernelDenoiser, *
     Save after an optimizer step at an epoch boundary, with no pending gradient
     accumulation. Recurrent images and DataLoader worker state are not saved.
     """
-    if not isinstance(model, TemporalKernelDenoiser):
-        raise ValueError("Expected a TemporalKernelDenoiser")
+    if not isinstance(model, NTASADDenoiser):
+        raise ValueError("Expected a NTASADDenoiser")
     for value in (epoch, global_step):
         if type(value) is not int or value < 0:
             raise ValueError("epoch and global_step must be nonnegative integers")
@@ -124,15 +124,15 @@ def save_recurrent_checkpoint(path: str | Path, model: TemporalKernelDenoiser, *
             os.unlink(temporary)
 
 
-def load_recurrent_checkpoint(path: str | Path, device: torch.device) -> tuple[TemporalKernelDenoiser, dict]:
+def load_checkpoint(path: str | Path, device: torch.device) -> tuple[NTASADDenoiser, dict]:
     """Load with restricted deserialization on CPU, then place the model in eval mode."""
     try:
         payload = torch.load(path, map_location="cpu", weights_only=True)
     except (pickle.UnpicklingError, EOFError, RuntimeError, IndexError) as error:
-        raise ValueError(f"Invalid recurrent checkpoint: {error}") from error
+        raise ValueError(f"Invalid denoiser checkpoint: {error}") from error
     if (not isinstance(payload, dict) or payload.get("format") != CHECKPOINT_FORMAT
             or type(payload.get("version")) is not int or payload["version"] != 1):
-        raise ValueError("Unsupported recurrent checkpoint format")
+        raise ValueError("Unsupported denoiser checkpoint format")
     if (payload.get("architecture") != ARCHITECTURE
             or type(payload.get("feature_version")) is not int or payload["feature_version"] != FEATURE_VERSION):
         raise ValueError("Checkpoint preprocessing or architecture is incompatible")
@@ -143,8 +143,10 @@ def load_recurrent_checkpoint(path: str | Path, device: torch.device) -> tuple[T
         if type(payload.get(key)) is not int or payload[key] < 0:
             raise ValueError(f"Invalid checkpoint {key}")
     for key in ("config", "dataset_split"):
+        if not isinstance(payload.get(key), dict):
+            raise ValueError(f"Checkpoint {key} must be a JSON object")
         _json_metadata(payload.get(key))
-    model = TemporalKernelDenoiser(payload.get("base_channels")).to(dtype=DTYPES[payload["parameter_dtype"]])
+    model = NTASADDenoiser(payload.get("base_channels")).to(dtype=DTYPES[payload["parameter_dtype"]])
     if any(not isinstance(value, torch.Tensor) or value.dtype != DTYPES[payload["parameter_dtype"]]
            or not torch.isfinite(value).all() for value in payload["state_dict"].values()):
         raise ValueError("Checkpoint weights must be finite tensors with the declared dtype")
@@ -155,7 +157,7 @@ def load_recurrent_checkpoint(path: str | Path, device: torch.device) -> tuple[T
     return model.to(device).eval(), payload
 
 
-def restore_recurrent_training(model: TemporalKernelDenoiser, optimizer: torch.optim.Optimizer,
+def restore_training(model: NTASADDenoiser, optimizer: torch.optim.Optimizer,
                                payload: dict, *, generator: torch.Generator | None = None,
                                restore_rng: bool = True) -> dict[str, int]:
     """Restore optimizer/RNG after loading weights and constructing its optimizer.

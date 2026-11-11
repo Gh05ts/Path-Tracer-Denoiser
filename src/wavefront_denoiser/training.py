@@ -13,12 +13,12 @@ import torch
 
 from .dataset_splits import audit_dataset_split, read_split_manifest
 from .frames import read_manifest
-from .recurrent import INPUT_CHANNELS, TemporalKernelDenoiser
-from .recurrent_checkpoint import load_recurrent_checkpoint, restore_recurrent_training, save_recurrent_checkpoint
-from .recurrent_data import RecurrentPatchDataset
-from .recurrent_loss import sequence_loss
+from .model import INPUT_CHANNELS, NTASADDenoiser
+from .checkpoint import load_checkpoint, restore_training, save_checkpoint
+from .sequence_data import SequencePatchDataset
+from .loss import sequence_loss
 from .sequences import SequenceDataset
-from .spatial_checkpoint import select_device
+from .device import select_device
 
 
 def training_config(path: str | Path) -> dict:
@@ -95,7 +95,7 @@ def evaluate_windows(model, dataset, device) -> dict:
     return {key: value / len(dataset) for key, value in totals.items()}
 
 
-def train_recurrent(config_path: str | Path, output: str | Path, device_name: str = "auto", *,
+def train_denoiser(config_path: str | Path, output: str | Path, device_name: str = "auto", *,
                      resume: str | Path | None = None) -> dict:
     """Train to total configured epochs; resuming writes a new run directory."""
     config = training_config(config_path)
@@ -103,13 +103,13 @@ def train_recurrent(config_path: str | Path, output: str | Path, device_name: st
     if output.exists():
         raise FileExistsError(f"Training output already exists: {output}")
     audit = audit_dataset_split(config["split_manifest"], allow_missing_test=True) if "split_manifest" in config else None
-    train = RecurrentPatchDataset(config["data_root"], sequence_ids=config["train_sequences"],
+    train = SequencePatchDataset(config["data_root"], sequence_ids=config["train_sequences"],
         length=config["window_length"], patch_size=config["patch_size"], patches_per_window=config["patches_per_window"])
     validation = SequenceDataset(config["data_root"], length=config["window_length"],
                                  sequence_ids=config["validation_sequences"])
     provenance = {"train": _inventory(train.sequences), "validation": _inventory(validation), "split_audit": audit}
     if config["validation_patch_size"] is not None:
-        validation = RecurrentPatchDataset(config["data_root"], sequence_ids=config["validation_sequences"],
+        validation = SequencePatchDataset(config["data_root"], sequence_ids=config["validation_sequences"],
             length=config["window_length"], patch_size=config["validation_patch_size"],
             patches_per_window=config["validation_crops_per_window"], augment=False)
     device = select_device(device_name)
@@ -122,17 +122,17 @@ def train_recurrent(config_path: str | Path, output: str | Path, device_name: st
     generator = torch.Generator().manual_seed(config["seed"])
     start_epoch, global_step = 0, 0
     if resume is None:
-        model = TemporalKernelDenoiser(config["base_channels"]).to(device)
+        model = NTASADDenoiser(config["base_channels"]).to(device)
         payload = None
     else:
-        model, payload = load_recurrent_checkpoint(resume, device)
+        model, payload = load_checkpoint(resume, device)
         comparable = lambda values: {key: value for key, value in
             {"validation_patch_size": None, "validation_crops_per_window": 5, **values}.items() if key != "epochs"}
         if comparable(payload["config"]) != comparable(config) or payload["dataset_split"] != provenance:
             raise ValueError("Resume configuration or training/validation data changed")
     optimizer = torch.optim.Adam(model.parameters(), lr=config["learning_rate"])
     if payload is not None:
-        progress = restore_recurrent_training(model, optimizer, payload, generator=generator)
+        progress = restore_training(model, optimizer, payload, generator=generator)
         start_epoch, global_step = progress["epoch"], progress["global_step"]
         if start_epoch >= config["epochs"]:
             raise ValueError("Resume needs epochs greater than the completed checkpoint epoch")
@@ -144,7 +144,7 @@ def train_recurrent(config_path: str | Path, output: str | Path, device_name: st
     (output / "split.json").write_text(json.dumps(provenance, indent=2, allow_nan=False) + "\n")
     best_loss, best_epoch, best_validation = initial["loss"], start_epoch, initial
     def save(name, epoch):
-        save_recurrent_checkpoint(output / name, model, optimizer=optimizer, epoch=epoch,
+        save_checkpoint(output / name, model, optimizer=optimizer, epoch=epoch,
             global_step=global_step, config=config, dataset_split=provenance, generator=generator)
     save("model.pt", start_epoch)
     for epoch in range(start_epoch + 1, config["epochs"] + 1):

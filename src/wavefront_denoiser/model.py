@@ -21,14 +21,14 @@ INPUT_CHANNELS = {"radiance": 3, "albedo": 3, "normal": 3, "depth": 1,
                   "guide_valid": 1, "sample_count": 1, "motion": 2, "history_valid": 1}
 FEATURE_CHANNELS = 15
 FEATURE_VERSION = 2
-ARCHITECTURE = "ntasad_uniform_unet_v2"
+ARCHITECTURE = "ntasad_spatiotemporal_unet_v1"
 
 
-class TemporalKernelDenoiser(nn.Module):
+class NTASADDenoiser(nn.Module):
     """Three spatial 5x5 kernels, one temporal 5x5 kernel, and learned blends.
 
     Returns nonnegative linear HDR RGB. No tone mapping or exposure is applied.
-    This is a reference model, not a checkpoint-compatible SpatialDenoiser.
+    All spatial filtering, temporal filtering, and blending share one U-Net.
     """
 
     def __init__(self, base_channels: int = 48):
@@ -106,16 +106,20 @@ class TemporalKernelDenoiser(nn.Module):
         return rgb
 
     def _step(self, buffers: Mapping[str, torch.Tensor],
-              history: torch.Tensor | None) -> torch.Tensor:
+              history: torch.Tensor | None, *, initialize: bool = True) -> torch.Tensor:
         """Internal recurrence and reconstruction both live in gamma/log space."""
         rgb = self._validate(buffers)
         current = encode_radiance(rgb)
-        if history is None:
+        if history is None and initialize:
             # Section 2.1: the first frame initializes history from uniform noisy RGB.
             return current
-        if history.shape != rgb.shape or history.dtype != rgb.dtype or history.device != rgb.device:
-            raise ValueError("History must match current RGB shape, dtype and device; reset on resize")
-        warped, valid = reproject_history(history, buffers["motion"], buffers["history_valid"])
+        if history is None:
+            warped = torch.zeros_like(current)
+            valid = torch.zeros_like(current[:, :1], dtype=torch.bool)
+        else:
+            if history.shape != rgb.shape or history.dtype != rgb.dtype or history.device != rgb.device:
+                raise ValueError("History must match current RGB shape, dtype and device; reset on resize")
+            warped, valid = reproject_history(history, buffers["motion"], buffers["history_valid"])
         motion = torch.where(torch.isfinite(buffers["motion"]), buffers["motion"], 0)
         # Section 2.1 lists normals, depth, motion, albedo, history, and noisy RGB.
         # Visibility and sample counts are contract checks, not extra learned features.
@@ -148,6 +152,20 @@ class TemporalKernelDenoiser(nn.Module):
                 raise ValueError("History must be finite nonnegative linear HDR")
             history = encode_radiance(history)
         return decode_radiance(self._step(buffers, history))
+
+    def forward_spatial(self, buffers: Mapping[str, torch.Tensor]) -> torch.Tensor:
+        """Denoise a still with this same U-Net and its three spatial kernels.
+
+        No temporal buffers are needed. This is an inference fallback using the
+        jointly trained weights; sequence training uses noisy initialization as
+        specified by the paper, followed by four learned recurrent steps.
+        """
+        if "radiance" not in buffers or buffers["radiance"].ndim != 4:
+            raise ValueError("Spatial fallback requires N3HW radiance")
+        rgb = buffers["radiance"]
+        frame = dict(buffers, motion=torch.zeros_like(rgb[:, :2]),
+                     history_valid=torch.zeros_like(rgb[:, :1]))
+        return decode_radiance(self._step(frame, None, initialize=False))
 
     def forward_sequence(self, buffers: Mapping[str, torch.Tensor], *,
                          reset: torch.Tensor | None = None,

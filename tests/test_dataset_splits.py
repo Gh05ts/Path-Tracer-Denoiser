@@ -99,16 +99,22 @@ def test_group_names_cannot_escape_dataset_root(split_fixture):
         read_split_manifest(filename)
 
 
-def test_training_never_loads_reserved_test_pixels(split_fixture, tmp_path, monkeypatch):
+def test_training_never_loads_reserved_test_pixels(split_fixture, tmp_path, monkeypatch, make_frame):
     torch = pytest.importorskip("torch")
-    pytest.importorskip("PIL")
-    import wavefront_denoiser.spatial as spatial
-    import wavefront_denoiser.spatial_training as training
-    from wavefront_denoiser.spatial_runtime import evaluate_partition, evaluate_spatial
+    import wavefront_denoiser.sequence_data as data
+    import wavefront_denoiser.sequences as sequences
+    from wavefront_denoiser.training import train_denoiser
+    from wavefront_denoiser.runtime import evaluate_partition, evaluate_sequences
 
     filename, _, paths = split_fixture
+    # Sequence training needs five consecutive frames in each observed group.
+    for name, number in (("train", 1), ("val", 2)):
+        for index in range(1, 5):
+            make_frame(f"data/{name}/frame_{index}", index=index, previous=True, sequence=name,
+                width=8, height=8, mutate=lambda c, n=number: c["reference.R"].fill(5+n),
+                metadata_mutate=lambda m, n=number, key=name: m.update(scene=f"scene_{key}", scene_fingerprint=f"{n:x}"))
     (paths["test"] / "frame.exr").write_bytes(b"withheld pixels must never be opened")
-    original = spatial.load_frame
+    original = data.load_frame
     opened = []
 
     def guarded(path, *args, **kwargs):
@@ -116,39 +122,37 @@ def test_training_never_loads_reserved_test_pixels(split_fixture, tmp_path, monk
         opened.append(path)
         return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(spatial, "load_frame", guarded)
-    monkeypatch.setattr(training, "load_frame", guarded)
-    config = {"split_manifest": filename.name, "require_reference_policy": False,
-              "epochs": 1, "patch_size": 4, "patches_per_frame": 1,
-              "base_channels": 4, "batch_size": 1, "cpu_threads": 1}
+    monkeypatch.setattr(data, "load_frame", guarded)
+    monkeypatch.setattr(sequences, "load_frame", guarded)
+    config = {"split_manifest": filename.name, "epochs": 1, "patch_size": 4,
+              "patches_per_window": 1, "base_channels": 4, "batch_size": 1, "cpu_threads": 1}
     config_path = tmp_path / "train.json"
     config_path.write_text(json.dumps(config))
     output = tmp_path / "run"
-    training.train_spatial(config_path, output, "cpu")
+    train_denoiser(config_path, output, "cpu")
     assert opened
     payload = torch.load(output / "model.pt", weights_only=True)
-    assert payload["dataset_split"]["partitions"]["test"] == ["test"]
+    assert payload["dataset_split"]["split_audit"]["partitions"]["test"] == ["test"]
     with pytest.raises(ValueError, match="Reserved test"):
-        evaluate_spatial(output / "model.pt", tmp_path / "data", ["test"], "cpu")
+        evaluate_sequences(output / "model.pt", tmp_path / "data", ["test"], "cpu")
     report = evaluate_partition(output / "model.pt", filename, "validation", "cpu")
     assert report["partition"] == "validation"
     assert report["test_used_for_checkpoint_selection"] is False
-    # Changing a previously observed split invalidates the frozen checkpoint's
-    # provenance before a final test evaluation can open any test pixels.
-    rewrite(paths["val"] / "manifest.json", lambda metadata: metadata.update(frame_index=3))
+    rewrite(paths["val"] / "manifest.json", lambda metadata: metadata.update(frame_index=9))
     with pytest.raises(ValueError, match="changed since"):
         evaluate_partition(output / "model.pt", filename, "test", "cpu")
 
 
 def test_strict_training_requires_reference_qualification(split_fixture, tmp_path):
     pytest.importorskip("torch")
-    from wavefront_denoiser.spatial_training import train_spatial
+    from wavefront_denoiser.training import train_denoiser
 
     filename, _, _ = split_fixture
+    rewrite(filename, lambda spec: spec.update(require_reference_policy=True))
     config_path = tmp_path / "train.json"
     config_path.write_text(json.dumps({"split_manifest": filename.name}))
-    with pytest.raises(ValueError, match="qualified reference policy"):
-        train_spatial(config_path, tmp_path / "must-not-exist", "cpu")
+    with pytest.raises(ValueError, match="qualified reference"):
+        train_denoiser(config_path, tmp_path / "must-not-exist", "cpu")
     assert not (tmp_path / "must-not-exist").exists()
 
 

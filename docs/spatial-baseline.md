@@ -1,5 +1,9 @@
 # Spatial HDR baseline
 
+Historical report: the independent spatial model and its training/checkpoint
+commands were retired on 2026-11-10. The current single NTASAD denoiser workflow
+is in [the README](../README.md).
+
 This model denoises one image at a time. It has no temporal state, frame order,
 motion-vector input, or animated-scene requirement. Capture group IDs retain
 the existing `sequence_id` name solely to select explicit data splits. Every

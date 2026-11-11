@@ -7,11 +7,11 @@ torch = pytest.importorskip("torch")
 
 from wavefront_denoiser.cli import main
 from wavefront_denoiser.ntasad_radiance import MAX_ENCODED, encode_radiance, decode_radiance
-from wavefront_denoiser.recurrent import ARCHITECTURE, FEATURE_CHANNELS, TemporalKernelDenoiser
-from wavefront_denoiser.recurrent_checkpoint import load_recurrent_checkpoint, save_recurrent_checkpoint
-from wavefront_denoiser.recurrent_data import RecurrentPatchDataset, transform_window
-from wavefront_denoiser.recurrent_loss import sequence_loss
-from wavefront_denoiser.recurrent_training import train_recurrent
+from wavefront_denoiser.model import ARCHITECTURE, FEATURE_CHANNELS, NTASADDenoiser
+from wavefront_denoiser.checkpoint import load_checkpoint, save_checkpoint
+from wavefront_denoiser.sequence_data import SequencePatchDataset, transform_window
+from wavefront_denoiser.loss import sequence_loss
+from wavefront_denoiser.training import train_denoiser
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +43,7 @@ def test_paper_radiance_transform_and_black_gradients(device):
 
 
 def test_figure3_depth_widths_head_shapes_and_xavier_biases(device):
-    model = TemporalKernelDenoiser().to(device)
+    model = NTASADDenoiser().to(device)
     assert model.base_channels == 48 and FEATURE_CHANNELS == 15
     assert len(model.down) == 5
     assert all(block[0].out_channels == 48 for block in model.down)
@@ -107,12 +107,12 @@ def test_augmentation_preserves_motion_correspondence_and_world_normals(device, 
 
 def test_previous_checkpoint_architecture_is_rejected(tmp_path):
     path = tmp_path / "old.pt"
-    save_recurrent_checkpoint(path, TemporalKernelDenoiser(4))
+    save_checkpoint(path, NTASADDenoiser(4))
     payload = torch.load(path, weights_only=True)
     payload.update(architecture="temporal_kernel_unet_v1", feature_version=1)
     torch.save(payload, path)
     with pytest.raises(ValueError, match="architecture"):
-        load_recurrent_checkpoint(path, torch.device("cpu"))
+        load_checkpoint(path, torch.device("cpu"))
 
 
 def create_training_data(make_frame, tmp_path):
@@ -129,29 +129,29 @@ def create_training_data(make_frame, tmp_path):
 
 def test_real_training_resume_matches_uninterrupted_run(make_frame, tmp_path, device):
     config, path = create_training_data(make_frame, tmp_path)
-    complete = train_recurrent(path, tmp_path / "complete", device.type)
+    complete = train_denoiser(path, tmp_path / "complete", device.type)
     config["epochs"] = 1
     path.write_text(json.dumps(config))
-    assert main(["train-recurrent", str(path), str(tmp_path / "first"), "--device", device.type]) == 0
+    assert main(["train", str(path), str(tmp_path / "first"), "--device", device.type]) == 0
     config["epochs"] = 2
     path.write_text(json.dumps(config))
-    resumed = train_recurrent(path, tmp_path / "resumed", device.type, resume=tmp_path / "first/last.pt")
+    resumed = train_denoiser(path, tmp_path / "resumed", device.type, resume=tmp_path / "first/last.pt")
     assert complete["global_step"] == resumed["global_step"] == 2
-    _, expected = load_recurrent_checkpoint(tmp_path / "complete/last.pt", torch.device("cpu"))
-    _, actual = load_recurrent_checkpoint(tmp_path / "resumed/last.pt", torch.device("cpu"))
+    _, expected = load_checkpoint(tmp_path / "complete/last.pt", torch.device("cpu"))
+    _, actual = load_checkpoint(tmp_path / "resumed/last.pt", torch.device("cpu"))
     for name, value in actual["state_dict"].items():
         torch.testing.assert_close(value, expected["state_dict"][name], rtol=0, atol=0)
     assert actual["architecture"] == ARCHITECTURE
     config["learning_rate"] = .002
     path.write_text(json.dumps(config))
     with pytest.raises(ValueError, match="configuration"):
-        train_recurrent(path, tmp_path / "invalid", device.type, resume=tmp_path / "first/last.pt")
+        train_denoiser(path, tmp_path / "invalid", device.type, resume=tmp_path / "first/last.pt")
     assert not (tmp_path / "invalid").exists()
 
 
 def test_patch_dataset_keeps_guides_reference_aligned(make_frame, tmp_path):
     create_training_data(make_frame, tmp_path)
-    dataset = RecurrentPatchDataset(tmp_path, sequence_ids=["train"], patch_size=8)
+    dataset = SequencePatchDataset(tmp_path, sequence_ids=["train"], patch_size=8)
     sample = dataset[0]
     assert sample["buffers"]["radiance"].shape == (5, 3, 8, 8)
     assert (sample["buffers"]["history_valid"][0] == 0).all()
@@ -159,7 +159,7 @@ def test_patch_dataset_keeps_guides_reference_aligned(make_frame, tmp_path):
 
 def test_deterministic_validation_crops_keep_alignment_and_rng(make_frame, tmp_path, monkeypatch):
     create_training_data(make_frame, tmp_path)
-    dataset = RecurrentPatchDataset(tmp_path, sequence_ids=["validation"], patch_size=8,
+    dataset = SequencePatchDataset(tmp_path, sequence_ids=["validation"], patch_size=8,
                                     patches_per_window=5, augment=False)
     # Crop loading must not call the full-frame tensor-stacking path.
     monkeypatch.setattr(type(dataset.sequences), "__getitem__", lambda *args: pytest.fail("full window allocated"))
@@ -180,10 +180,10 @@ def test_cropped_validation_training_resume(make_frame, tmp_path, device):
     config, path = create_training_data(make_frame, tmp_path)
     config.update(validation_patch_size=8, validation_crops_per_window=2, epochs=1)
     path.write_text(json.dumps(config))
-    first = train_recurrent(path, tmp_path/"cropped", device.type)
+    first = train_denoiser(path, tmp_path/"cropped", device.type)
     config["epochs"] = 2
     path.write_text(json.dumps(config))
-    second = train_recurrent(path, tmp_path/"cropped-resumed", device.type,
+    second = train_denoiser(path, tmp_path/"cropped-resumed", device.type,
                              resume=tmp_path/"cropped/last.pt")
     assert first["global_step"] == 1 and second["global_step"] == 2
 
@@ -192,12 +192,12 @@ def test_legacy_full_frame_validation_config_can_still_resume(make_frame, tmp_pa
     config, path = create_training_data(make_frame, tmp_path)
     config["epochs"] = 1
     path.write_text(json.dumps(config))
-    train_recurrent(path, tmp_path/"legacy-first", device.type)
+    train_denoiser(path, tmp_path/"legacy-first", device.type)
     payload = torch.load(tmp_path/"legacy-first/last.pt", weights_only=True)
     payload["config"].pop("validation_patch_size")
     payload["config"].pop("validation_crops_per_window")
     torch.save(payload, tmp_path/"legacy.pt")
     config["epochs"] = 2
     path.write_text(json.dumps(config))
-    result = train_recurrent(path, tmp_path/"legacy-resumed", device.type, resume=tmp_path/"legacy.pt")
+    result = train_denoiser(path, tmp_path/"legacy-resumed", device.type, resume=tmp_path/"legacy.pt")
     assert result["global_step"] == 2

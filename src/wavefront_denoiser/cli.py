@@ -1,4 +1,4 @@
-"""Dataset validation, spatial/recurrent training, evaluation and HDR inference."""
+"""Dataset validation, unified NTASAD training, evaluation and HDR inference."""
 
 import argparse
 import json
@@ -10,31 +10,31 @@ from .sequences import discover_sequences
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="HDR datasets and spatial/recurrent denoising")
+    parser = argparse.ArgumentParser(description="HDR datasets and the spatial/temporal NTASAD denoiser")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    lighting = subcommands.add_parser("lighting-study", help="Run a matched-budget within-scene lighting experiment")
+    lighting = subcommands.add_parser("lighting-study", help="Capture the historical matched-budget lighting study")
     lighting.add_argument("config")
     lighting.add_argument("output")
     lighting.add_argument("--capture-executable")
     lighting.add_argument("--renderer-root")
-    lighting.add_argument("--phase", choices=("all", "capture", "train"), default="all")
-    lighting.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     validate = subcommands.add_parser("validate", help="Check metadata, image checksums, channels, and frame history")
     validate.add_argument("root")
-    train = subcommands.add_parser("train", help="Train the spatial baseline with explicit validation groups")
+    train = subcommands.add_parser("train", help="Train the unified NTASAD denoiser on sequence windows")
     train.add_argument("config")
     train.add_argument("output")
     train.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    recurrent = subcommands.add_parser("train-recurrent", help="Train the uniform-SPP NTASAD denoiser on sequence crops")
-    recurrent.add_argument("config")
-    recurrent.add_argument("output")
-    recurrent.add_argument("--resume")
-    recurrent.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    denoise = subcommands.add_parser("denoise", help="Denoise one HDR capture or named-channel EXR")
+    train.add_argument("--resume")
+    denoise = subcommands.add_parser("denoise", help="Denoise a still using the unified model's spatial branch")
     denoise.add_argument("checkpoint")
     denoise.add_argument("input")
     denoise.add_argument("output")
     denoise.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    sequence = subcommands.add_parser("denoise-sequence", help="Stream clips with spatial/temporal filtering and history resets")
+    sequence.add_argument("checkpoint")
+    sequence.add_argument("root")
+    sequence.add_argument("output")
+    sequence.add_argument("--sequence-id", action="append")
+    sequence.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     evaluate = subcommands.add_parser("evaluate", help="Compare a checkpoint with noisy inputs on selected groups")
     evaluate.add_argument("checkpoint")
     evaluate.add_argument("root", nargs="?")
@@ -59,37 +59,34 @@ def main(argv: list[str] | None = None) -> int:
     capture_split.add_argument("--renderer-root")
     args = parser.parse_args(argv)
     try:
-        if args.command == "train-recurrent":
-            from .recurrent_training import train_recurrent
-
-            report = train_recurrent(args.config, args.output, args.device, resume=args.resume)
-            print(json.dumps(report, indent=2, allow_nan=False))
-            return 0
         if args.command == "lighting-study":
-            from .lighting_experiment import prepare_experiment, train_and_evaluate
+            from .lighting_experiment import prepare_experiment
 
-            if args.phase in ("all", "capture"):
-                if not args.capture_executable:
-                    raise ValueError("Capture phase needs --capture-executable")
-                report = prepare_experiment(args.config, args.output, args.capture_executable, args.renderer_root)
-            if args.phase in ("all", "train"):
-                report = train_and_evaluate(args.config, args.output, args.device)
-            print(json.dumps({key: value for key, value in report.items() if key not in ("inventory", "results")}, indent=2, allow_nan=False))
+            if not args.capture_executable:
+                raise ValueError("Capture phase needs --capture-executable")
+            report = prepare_experiment(args.config, args.output, args.capture_executable, args.renderer_root)
+            print(json.dumps({key: value for key, value in report.items() if key != "inventory"}, indent=2, allow_nan=False))
             return 0
         if args.command == "train":
-            from .spatial_training import train_spatial
+            from .training import train_denoiser
 
-            report = train_spatial(args.config, args.output, args.device)
+            report = train_denoiser(args.config, args.output, args.device, resume=args.resume)
             print(json.dumps(report, indent=2, allow_nan=False))
             return 0
         if args.command == "denoise":
-            from .spatial_runtime import denoise_image
+            from .runtime import denoise_image
 
             report = denoise_image(args.checkpoint, args.input, args.output, args.device)
             print(json.dumps(report, indent=2, allow_nan=False))
             return 0
+        if args.command == "denoise-sequence":
+            from .runtime import denoise_sequence
+
+            report = denoise_sequence(args.checkpoint, args.root, args.output, args.sequence_id, args.device)
+            print(json.dumps(report, indent=2, allow_nan=False))
+            return 0
         if args.command == "evaluate":
-            from .spatial_runtime import evaluate_partition, evaluate_spatial
+            from .runtime import evaluate_partition, evaluate_sequences
 
             if args.split_manifest:
                 if args.root is not None:
@@ -98,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 if args.root is None or args.partition != "validation":
                     raise ValueError("Group evaluation needs a root; strict test evaluation needs --split-manifest")
-                report = evaluate_spatial(args.checkpoint, args.root, args.sequence_id, args.device)
+                report = evaluate_sequences(args.checkpoint, args.root, args.sequence_id, args.device)
             print(json.dumps(report, indent=2, allow_nan=False))
             return 0
         if args.command == "split-audit":

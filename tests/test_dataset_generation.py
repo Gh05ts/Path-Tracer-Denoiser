@@ -159,6 +159,11 @@ def test_provenance_tracks_external_bytes_and_binds_renderer_after_plan(tmp_path
     output = tmp_path/"data"
     assert texture in asset_files(tmp_path/"bmw.json")
     prepare(path, output, configs, None)
+    assert (output / "train.json").is_file()
+    assert not (output / "train-spatial.json").exists()
+    assert not (output / "train-recurrent.json").exists()
+    training = json.loads((output / "train.json").read_text())
+    assert training["window_length"] == 5 and training["base_channels"] == 48
     executable = tmp_path/"renderer"
     executable.write_bytes(b"renderer version 1")
     prepare(path, output, configs, executable)
@@ -172,14 +177,15 @@ def test_provenance_tracks_external_bytes_and_binds_renderer_after_plan(tmp_path
 
 def test_v3_profiles_preserve_v2_cameras_and_sample_ranges():
     from collections import Counter, defaultdict
-    from wavefront_denoiser.dataset_generation import DEFAULT_PLAN, DEFAULT_DATASET_ROOT
+    from wavefront_denoiser.dataset_generation import DEFAULT_DATASET_ROOT
+    v3_plan = PLAN.with_name("plan-v3.json")
     assert DEFAULT_DATASET_ROOT == Path(__file__).resolve().parents[2]/"dataset"
-    plan = read_plan(DEFAULT_PLAN)
-    configs = build_configs(DEFAULT_PLAN)
+    plan = read_plan(v3_plan)
+    configs = build_configs(v3_plan)
     assert plan["dataset_id"] == "denoiser-v3"
     assert plan["indirect_radiance_clamp"] == 10.
     assert {g: {k: v for k, v in c.items() if k != "indirect_radiance_clamp"}
-            for g, c in configs.items()} == build_configs(DEFAULT_PLAN.with_name("plan-v2.json"))
+            for g, c in configs.items()} == build_configs(PLAN.with_name("plan-v2.json"))
     assert all(c["indirect_radiance_clamp"] == 10. for c in configs.values())
     assert len(configs) == 126
     for scene in plan["scenes"]:
@@ -201,7 +207,7 @@ def test_v3_profiles_preserve_v2_cameras_and_sample_ranges():
         distances.append(np.linalg.norm(np.asarray(frames[-1]["position"])-frames[0]["position"]))
     assert distances[0] < distances[1] < distances[2]
     assert np.isclose(distances[2]/distances[0], 2.8/.6)
-    reports = build_configs(DEFAULT_PLAN, reference_samples=4096)
+    reports = build_configs(v3_plan, reference_samples=4096)
     for g, c in configs.items():
         assert c["frames"] == reports[g]["frames"]
         assert c["sample_start"] == reports[g]["sample_start"]
@@ -215,7 +221,68 @@ def test_invalid_motion_multiplier_rejected(multiplier):
         trajectory(scene, scene["anchors"][0], "linear", motion_multiplier=multiplier)
 
 
-def test_cli_defaults_to_v3_under_workspace_dataset(tmp_path, monkeypatch):
+def test_v4_expands_viewpoints_and_motion_without_changing_paused_plan():
+    from collections import Counter
+    from wavefront_denoiser.dataset_generation import DEFAULT_PLAN
+    plan = read_plan(DEFAULT_PLAN)
+    old_plan = read_plan(PLAN.with_name("plan-v3.json"))
+    configs = build_configs(DEFAULT_PLAN)
+    reports = build_configs(DEFAULT_PLAN, reference_samples=4096)
+    assert plan["dataset_id"] == "denoiser-v4"
+    assert len(configs) == 234
+    membership = {s["id"]: s["partition"] for s in plan["scenes"]}
+    assert Counter(membership[c["scene"]] for c in configs.values()) == {
+        "train": 180, "validation": 36, "test": 18}
+    for scene, old in zip(plan["scenes"], old_plan["scenes"]):
+        assert scene["partition"] == old["partition"]
+        assert scene["anchors"][:len(old["anchors"])] == old["anchors"]
+        assert len(scene["anchors"]) == (6 if scene["partition"] == "train" else 3)
+        origins = []
+        for anchor in scene["anchors"]:
+            # Pan/tilt keeps the origin fixed and reveals each actual viewpoint.
+            frames = trajectory(scene, anchor, "pan_tilt")
+            origins.append(frames[0]["position"])
+            if "camera" in anchor:
+                np.testing.assert_allclose(frames[0]["position"], anchor["camera"]["position"])
+        assert len({tuple(o) for o in origins}) == len(origins)
+        for anchor in scene["anchors"][len(old["anchors"]):]:
+            assert min(np.linalg.norm(np.array(anchor["camera"]["position"])-o)
+                       for o in origins[:len(old["anchors"])]) > .3
+    assert plan["motion_profiles"]["slow"] == old_plan["motion_profiles"]["slow"]
+    for speed in ("medium", "fast"):
+        assert 1.2 < plan["motion_profiles"][speed]/old_plan["motion_profiles"][speed] < 1.35
+    old_end = max(c["sample_start"]+8*c["sample_stride"]
+                  for c in build_configs(PLAN.with_name("plan-v3.json")).values())
+    ranges = []
+    for group, config in configs.items():
+        assert config["sample_start"] > old_end
+        assert config["frames"] == reports[group]["frames"]
+        assert config["sample_start"] == reports[group]["sample_start"]
+        assert config["indirect_radiance_clamp"] == 10.
+        positions = np.array([f["position"] for f in config["frames"]])
+        targets = np.array([f["target"] for f in config["frames"]])
+        assert np.isfinite(positions).all() and np.isfinite(targets).all()
+        assert np.all(np.linalg.norm(targets-positions, axis=1) > 0)
+        ranges.append((config["sample_start"], config["sample_start"]+8*config["sample_stride"]))
+    assert all(a[1] <= b[0] for a, b in zip(ranges, ranges[1:]))
+    # Independent reference-convergence replicas reserve samples from 1e9.
+    assert ranges[-1][1] < 1_000_000_000
+
+
+def test_explicit_anchor_camera_is_independent_of_scene_camera():
+    scene = read_plan(PLAN)["scenes"][0]
+    camera = {"position": [4, 2, 3], "target": [0, 1, 0], "up": [0, 1, 0],
+              "vertical_fov_degrees": 55.}
+    anchor = {"name": "remote", "camera": camera}
+    for motion in MOTIONS:
+        frames = trajectory(scene, anchor, motion)
+        moved_scene = deepcopy(scene)
+        moved_scene["camera"]["position"] = [100, 100, 100]
+        assert frames == trajectory(moved_scene, anchor, motion)
+        assert all(f["vertical_fov_degrees"] == 55. for f in frames)
+
+
+def test_cli_defaults_to_v4_under_workspace_dataset(tmp_path, monkeypatch):
     from wavefront_denoiser import dataset_generation as generation
     called = {}
     def prepare_plan(path, output, configs, executable):
@@ -225,6 +292,6 @@ def test_cli_defaults_to_v3_under_workspace_dataset(tmp_path, monkeypatch):
     monkeypatch.setattr(generation, "prepare", prepare_plan)
     assert generation.main(["--stage", "plan"]) == 0
     assert called["path"] == generation.DEFAULT_PLAN
-    assert called["output"] == tmp_path/"dataset/denoiser-v3"
+    assert called["output"] == tmp_path/"dataset/denoiser-v4"
     assert called["executable"] is None
     assert all(g.rsplit("_", 1)[1] in ("slow", "medium", "fast") for g in called["configs"])

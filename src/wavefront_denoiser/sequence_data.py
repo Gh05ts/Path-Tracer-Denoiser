@@ -54,7 +54,7 @@ def transform_window(buffers: Mapping[str, torch.Tensor], *, top: int, left: int
     return result
 
 
-class RecurrentPatchDataset(torch.utils.data.Dataset):
+class SequencePatchDataset(torch.utils.data.Dataset):
     """Five-frame windows by default; a fresh shared crop/augmentation per access."""
 
     def __init__(self, root, *, sequence_ids: list[str], length: int = 5,
