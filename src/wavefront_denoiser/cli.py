@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
     train.add_argument("output")
     train.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     train.add_argument("--resume")
+    joint = subcommands.add_parser("train-adaptive", help="Jointly train the NTASAD sampler and denoiser on v5 layers")
+    joint.add_argument("config")
+    joint.add_argument("output")
+    joint.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    joint.add_argument("--resume")
     denoise = subcommands.add_parser("denoise", help="Denoise a still using the unified model's spatial branch")
     denoise.add_argument("checkpoint")
     denoise.add_argument("input")
@@ -66,6 +71,12 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("Capture phase needs --capture-executable")
             report = prepare_experiment(args.config, args.output, args.capture_executable, args.renderer_root)
             print(json.dumps({key: value for key, value in report.items() if key != "inventory"}, indent=2, allow_nan=False))
+            return 0
+        if args.command == "train-adaptive":
+            from .joint_training import train_joint
+
+            report = train_joint(args.config, args.output, args.device, resume=args.resume)
+            print(json.dumps(report, indent=2, allow_nan=False))
             return 0
         if args.command == "train":
             from .training import train_denoiser

@@ -1,5 +1,9 @@
 # Frame format v1
 
+V5 retains these original paired frames unchanged under `base/` and adds a
+separate [companion-layer format and reader](../dataset_generation/V5.md).
+The uniform v1 count/channel contract described below remains unchanged.
+
 One completed frame is a directory containing `manifest.json` and `frame.exr`.
 The producer writes into a new sibling `.partial` directory and renames it after
 both files close. Readers ignore partial directories. Existing captures are never

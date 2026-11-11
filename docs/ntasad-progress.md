@@ -1,5 +1,10 @@
 # NTASAD denoiser audit and implementation
 
+Latest fidelity baseline: [paper and supplement audit](ntasad-fidelity-audit.md).
+The adaptive default now uses the pixel-mean pyramid and joint v2 checkpoint
+envelope; original v1 checkpoints retain their sample-mass reconstruction.
+The detailed sections below include historical implementation status.
+
 Target: Hasselgren et al., *Neural Temporal Adaptive Sampling and Denoising*,
 Eurographics 2020. Sources used for this audit:
 
@@ -9,10 +14,12 @@ Eurographics 2020. Sources used for this audit:
 This is a reconstruction from the publication, not an independently verified
 copy of the authors' implementation. The denoiser now follows substantially
 more of the published specification than the original compact prototype.
-Adaptive sampling, joint sampler/denoiser training, the Falcor renderer, and
-reproduction of the authors' training scenes remain outside this stage.
+Adaptive sampler prediction, normalization and independent sample-layer replay
+now have a separate [implementation and integration plan](ntasad-adaptive-plan.md).
+CUDA adaptive rendering, joint sampler/denoiser training, the Falcor renderer,
+and reproduction of the authors' training scenes remain outside this stage.
 There is now one denoiser model. The original residual spatial U-Net, its trainer
-and checkpoint format have been removed; the adaptive sampler remains deferred.
+and checkpoint format have been removed; the sampler is a separate network.
 No trained NTASAD checkpoint or captured training dataset is included here.
 
 ## Audit
@@ -645,3 +652,66 @@ Final unification checks: **151 tests passed, 12 optional GPU/cross-language
 tests skipped** on CPU. CLI help exposes one trainer and both inference modes;
 the source contains one model class and one trainer. The default network retains
 1,114,311 parameters.
+
+### Adaptive v5 capture follow-up
+
+The [v5 companion workflow](../dataset_generation/V5.md) now plans from v4's
+exact 234 clips, copies completed source frames with checksum/camera/settings
+validation, and renders independent 1/2/8/16/32-SPP layers without repeating
+references or guides. Its reader combines these with the original 4-SPP layer
+and supports explicit-partition five-frame windows. The original uniform model,
+checkpoint format, v4 plan and capture launcher are unchanged.
+
+The sandbox hid GPU access during the original audit. Elevated execution exposes
+an RTX 3090; the complete Python suite now passes **214 tests with no skips**,
+including existing and new GPU capture tests and the C++ EXR fixture. The new
+layer exporter also passes its C++ test. Production source frames are expected
+under `../dataset/denoiser-v4` but are not here yet, so their reuse/pilot checks
+remain pending. Zero-sample reconstruction, the renderer-gradient approximation,
+joint training and live adaptive primary-ray scheduling are subsequent stages.
+
+### Sparse reconstruction and count-gradient follow-up
+
+The [adaptive reconstruction operators](adaptive-reconstruction.md) now support
+zero-count taps, sample-weighted transformed pyramids, normalized available
+history and explicit output availability. A separate adaptive wrapper reuses
+the existing U-Net backbone; the uniform model and checkpoint format remain
+unchanged. The sampler accepts optional history availability without changing
+its learned feature width or default behavior.
+
+Training replay now supplies the linear-domain DASR equation (8) estimator
+for positive counts. Its zero-count extension is an explicit caller choice;
+targets affect only backward, and counts outside the six-layer capacity fail
+rather than being silently clipped. The full RTX 3090 suite passes **246 tests
+with no skips**. A captured v5 fixture also passed a controlled five-frame
+gradient/update check. These checks do not establish trained quality. Joint
+training configuration, capacity policy, resumable two-network checkpoints and
+production dataset validation remain subsequent work.
+
+### Joint adaptive training follow-up
+
+The [joint trainer](joint-training.md) now exposes `train-adaptive`, aligned
+layer/guide crops, five-frame recurrence, two-network Adam optimization and a
+separate atomic checkpoint with optimizer, RNG, execution flags and verified
+data inventory. Planning also creates runnable `train-joint.json`, preserving
+the historical experiment plan and existing edited configurations.
+
+Capacity handling is explicit: the default `capped_softmax_v1` redistributes
+continuous allocation above the 63-sample bank capacity; `paper_softmax_v1`
+retains the unbounded equation and rejects overflow. Independent rounding,
+zero-count gradient choices and actual path totals are recorded. The bounded
+policy is a documented engineering variant. Strict deterministic bilinear
+gathers replace CUDA grid-sample backward only in joint recurrence, enabling
+exact epoch-boundary resume.
+
+The complete RTX 3090 suite passes **278 tests with no skips**. New tests cover
+bounded allocation gradients, crop alignment, partition/inventory enforcement,
+atomic checkpoints and exact CPU resume. A separate real Demo/Prism pilot used
+two eight-frame 17x13 clips, 16-SPP references and reduced-width networks.
+Both networks received gradients; two uninterrupted epochs and one epoch plus
+resume produced bitwise-identical weights after eight optimizer steps. Initial
+validation loss 0.14068 reached 0.13803; these small crop losses establish
+pipeline operation, not sampling effectiveness or paper-quality reproduction.
+Test images were not loaded. Production v4 inputs remain pending, as do native
+resolution validation, convergence training, matched-budget sampler comparisons
+and live CUDA adaptive primary-ray scheduling.

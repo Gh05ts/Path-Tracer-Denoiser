@@ -12,6 +12,9 @@ Russian roulette from depth 5, 256×256 render tiles, caustics disabled, and an
 explicit `indirect_radiance_clamp` of **10** for both noisy inputs and references.
 Adaptive sampling remains deferred.
 
+For the separate v5 companion dataset, see [layer capture and reuse](V5.md).
+It inherits this v4 plan and leaves the active v4 capture workflow unchanged.
+
 V4 retains v3's corrected integrator **11**, glass/GGX and glTF material fixes,
 and clamp 10, while expanding viewpoints and increasing medium/fast motion.
 The paused v3 output remains untouched in `../dataset/denoiser-v3` with two

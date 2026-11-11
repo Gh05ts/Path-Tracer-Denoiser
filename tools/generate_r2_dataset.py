@@ -6,11 +6,11 @@ import sys
 from wavefront_denoiser.dataset_generation import main
 
 # Optional local settings. Empty credentials use the existing environment.
-ACCOUNT_ID = "xxx"
-ACCESS_KEY_ID = "xxx"
-SECRET_ACCESS_KEY = "xxx"
-BUCKET_NAME = "xxx"
-PREFIX = "xxx"
+ACCOUNT_ID = ""
+ACCESS_KEY_ID = ""
+SECRET_ACCESS_KEY = ""
+BUCKET_NAME = ""
+PREFIX = ""
 # Optional for jurisdiction-specific buckets; copy the bucket's S3 endpoint.
 ENDPOINT_URL = ""
 

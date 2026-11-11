@@ -42,6 +42,64 @@ def reproject_history(history: torch.Tensor, motion: torch.Tensor,
     return torch.where(valid[:, None], warped, torch.zeros_like(warped)), valid[:, None]
 
 
+def reproject_history_gather(history: torch.Tensor, motion: torch.Tensor,
+                             history_valid: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pixel-space bilinear gather, with deterministic CUDA backward when enabled.
+
+    torch.gather supports torch.use_deterministic_algorithms(True), unlike CUDA
+    grid_sample backward. Exact boundary derivatives use clamped neighbor taps;
+    values and interior derivatives match bilinear reprojection within FP error.
+    """
+    if history.ndim != 4 or min(history.shape) < 1 or not history.is_floating_point():
+        raise ValueError("history must be nonempty floating NCHW")
+    n,c,h,w = history.shape
+    if (motion.shape != (n,2,h,w) or history_valid.shape != (n,1,h,w)
+            or motion.device != history.device or history_valid.device != history.device
+            or motion.dtype != history.dtype):
+        raise ValueError("Invalid history motion/mask shape, dtype or device")
+    if not torch.all((history_valid == 0) | (history_valid == 1)):
+        raise ValueError("history_valid must be binary")
+    y,x = torch.meshgrid(torch.arange(h,device=history.device,dtype=history.dtype),
+                         torch.arange(w,device=history.device,dtype=history.dtype),indexing="ij")
+    px,py = x+motion[:,0],y+motion[:,1]
+    valid = ((history_valid[:,0] == 1) & torch.isfinite(px) & torch.isfinite(py)
+             & (px >= 0) & (px <= w-1) & (py >= 0) & (py <= h-1))
+    px,py = torch.where(valid,px,0),torch.where(valid,py,0)
+    x0,y0 = px.floor().long(),py.floor().long()
+    x1,y1 = (x0+1).clamp_max(w-1),(y0+1).clamp_max(h-1)
+    dx,dy = (px-x0.to(px.dtype))[:,None],(py-y0.to(py.dtype))[:,None]
+    flat = history.reshape(n,c,h*w)
+    def tap(ix,iy):
+        index = (iy*w+ix).flatten(1)[:,None].expand(-1,c,-1)
+        return torch.gather(flat,2,index).reshape(n,c,h,w)
+    value = ((1-dx)*(1-dy)*tap(x0,y0) + dx*(1-dy)*tap(x1,y0)
+             + (1-dx)*dy*tap(x0,y1) + dx*dy*tap(x1,y1))
+    return torch.where(valid[:,None],value,0),valid[:,None]
+
+
+def reproject_available_history(history: torch.Tensor, motion: torch.Tensor,
+                                history_valid: torch.Tensor,
+                                available: torch.Tensor, *, backend="grid_sample") -> tuple[torch.Tensor, torch.Tensor]:
+    """Bilinear warp normalized over available history, excluding missing black.
+
+    Availability is explicit boolean N1HW from the adaptive reconstruction. The
+    renderer's geometric history mask still gates each destination center.
+    Partial bilinear footprints are normalized; empty footprints stay invalid.
+    """
+    if (available.shape != history[:, :1].shape or available.device != history.device
+            or available.dtype != torch.bool):
+        raise ValueError("history_available must be matching boolean N1HW")
+    if backend not in ("grid_sample","gather"):
+        raise ValueError("Unknown available-history warp backend")
+    warp = reproject_history if backend == "grid_sample" else reproject_history_gather
+    clean = torch.where(available, history, 0)
+    numerator, geometric = warp(clean, motion, history_valid)
+    coverage, _ = warp(available.to(history.dtype), motion, history_valid)
+    valid = geometric & (coverage > 0)
+    safe = torch.where(valid, coverage, torch.ones_like(coverage))
+    return torch.where(valid, numerator / safe, 0), valid
+
+
 def apply_kernel(image: torch.Tensor, logits: torch.Tensor, *,
                  valid: torch.Tensor | None = None) -> torch.Tensor:
     """Apply per-pixel normalized kernels, excluding borders and invalid taps.
