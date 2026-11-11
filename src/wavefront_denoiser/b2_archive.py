@@ -9,6 +9,7 @@ import subprocess
 from urllib.parse import urlsplit
 
 from .b2_native import B2NativeClient
+from .capture_history import compatible_receipt_lock
 
 
 def file_hashes(path: Path) -> dict:
@@ -118,7 +119,7 @@ class B2SceneArchiver:
             if (receipt.get("format") != self.receipt_format or receipt.get("version") != 1
                     or receipt.get("status") != "verified" or receipt.get("scene") != scene
                     or receipt.get("destination") != self.destination
-                    or receipt.get("capture_lock_sha256") != lock_hash
+                    or not compatible_receipt_lock(self.output, scene, receipt.get("capture_lock_sha256"), lock_hash)
                     or any(receipt.get(key) != value for key, value in context.items())):
                 raise ValueError(f"Archive receipt does not match this dataset/destination: {receipt_path}")
             previous = receipt["files"]
@@ -145,6 +146,7 @@ class B2SceneArchiver:
             "capture_lock.json", "split.json", "train.json", "reference-check-plan.json",
             "reference_policy.json", "reference_convergence.json") if (self.output / name).is_file()]
         sidecars.extend(sorted((self.output / "capture_configs").glob("*.json")))
+        sidecars.extend(sorted(p for p in (self.output / "capture-history").rglob("*") if p.is_file()))
         sidecars.extend(self.output / "logs" / f"{group}.log" for group in configs
                         if (self.output / "logs" / f"{group}.log").is_file())
         inventory, available, stamps = {}, [], {}

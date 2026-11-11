@@ -15,6 +15,19 @@ Adaptive sampling remains deferred.
 For the separate v5 companion dataset, see [layer capture and reuse](V5.md).
 It inherits this v4 plan and leaves the active v4 capture workflow unchanged.
 
+**Bistro correction (2026-11-11):** integrator 12 fixes missing small instanced
+geometry and the black front banner. See the [diagnosis and validation](../../Wavefront-Path-Tracer/docs/diagnostics/bistro-scene-fix.md).
+The local v4 run has an explicit capture revision preserving its original lock
+and archived BMW provenance. BMW passed a small renderer comparison and all
+288 R2 EXRs matched archive metadata; Bistro is reset to frame 0. From the
+workspace root, `bash dataset/denoiser-v4/resume.sh` continues the same directory
+and R2 prefix. The reset Bistro exports/log were backed up. Merely deleting
+folders without invalidating their completion logs would silently skip them.
+Other runs require their own explicit reuse validation or a fresh output.
+V5 companion layers must use source frames from the same integrator version.
+Bistro lighting is calibrated in a derived glTF asset; PNG exposure defaults to
+1 for every scene. Generate that asset with the renderer's `tools/setup_assets.py`.
+
 V4 retains v3's corrected integrator **11**, glass/GGX and glTF material fixes,
 and clamp 10, while expanding viewpoints and increasing medium/fast motion.
 The paused v3 output remains untouched in `../dataset/denoiser-v3` with two

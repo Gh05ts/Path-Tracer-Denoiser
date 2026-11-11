@@ -40,6 +40,11 @@ The tool reads the EXR directly without a manifest and requires both named RGB
 layers. PNGs use Reinhard tone mapping and gamma 2.2 for display; HDR data in the
 EXR remains unchanged. Dependencies are included in the setup above.
 
+Both layers and dataset contact sheets use exposure `1.0`. Bistro's sun/lamp
+balance is authored in its derived glTF lighting settings, with no scene-specific
+display transform or renderer branch. Override PNG exposure explicitly with
+`--exposure MULTIPLIER`; this never changes HDR data or lighting balance.
+
 ## Dataset and training
 
 The current [dataset workflow](dataset_generation/README.md) uses v4: 1080p,

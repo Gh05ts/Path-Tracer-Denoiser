@@ -3,7 +3,7 @@
   "preset": "sponza",
   "object": {
     "source": "gltf",
-    "file": "../../../Wavefront-Path-Tracer/assets/niagara_bistro/bistro-png.gltf"
+    "file": "../../../Wavefront-Path-Tracer/assets/scenes/bistro-lighting.gltf"
   },
   "gltf_scale": 1,
   "lighting": {

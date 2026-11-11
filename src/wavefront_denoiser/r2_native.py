@@ -163,9 +163,25 @@ class R2NativeClient:
     def upload_files(self, root: Path, available: list[str], inventory: dict):
         remote = self.list_files()
         lock = "capture_lock.json"
+        preserved = set()
         if lock in remote and lock in inventory and not self.matches(remote[lock], inventory[lock]):
-            raise ValueError("R2 prefix already contains a different capture lock; choose a new prefix")
+            from .capture_history import revision_parent
+            import json
+            try:
+                parent = revision_parent(root, json.loads((root / lock).read_text()))
+            except (ValueError, KeyError, OSError):
+                parent = None
+            if not parent or parent not in inventory or not self.matches(remote[lock], inventory[parent]):
+                raise ValueError("R2 prefix already contains a different capture lock; choose a new prefix")
+            # Preserve and verify immutable ancestry/evidence before replacing
+            # the live lock. A retry can safely finish either half of this step.
+            for name in sorted(n for n in available if n.startswith("capture-history/")):
+                if not self.matches(remote.get(name), inventory[name]):
+                    self.upload_file(root / name, name, inventory[name])
+                    preserved.add(name)
         for i, relative in enumerate(sorted(available, key=lambda name: name != lock), 1):
+            if relative in preserved:
+                continue
             if not self.matches(remote.get(relative), inventory[relative]):
                 self.upload_file(root / relative, relative, inventory[relative])
                 if relative.endswith(".exr") or i == len(available):

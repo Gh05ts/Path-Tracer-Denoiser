@@ -20,6 +20,7 @@ from .dataset_splits import audit_dataset_split
 from .b2_archive import B2SceneArchiver
 from .r2_archive import R2SceneArchiver
 from .frames import load_frame, read_manifest
+from .preview import display_rgb
 from .training_defaults import dataset_training_config
 
 MOTIONS = ("linear", "dolly", "wave", "circle", "orbit", "pan_tilt")
@@ -253,6 +254,10 @@ def prepare(plan_path: Path, output: Path, configs: dict, executable: Path | Non
     lock_path = output / "capture_lock.json"
     if lock_path.exists():
         previous = json.loads(lock_path.read_text())
+        if "revision" in previous:
+            from .capture_history import revision_parent
+            revision_parent(output, previous)
+            lock["revision"] = previous["revision"]
         if executable is None:
             lock["renderer_sha256"] = previous["renderer_sha256"]
         elif previous["renderer_sha256"] is None and not list(output.glob("*/frame_*")):
@@ -486,9 +491,7 @@ def contact_sheet(output: Path, configs: dict, groups: list[str], *, first_frame
     for row, group in enumerate(groups):
         for col, i in enumerate(selections[row]):
             frame = load_frame(output / group / f"frame_{i:06d}")
-            rgb = frame.buffers["reference"].clip(0)
-            mapped = np.power(rgb/(1+rgb), 1/2.2)
-            image = Image.fromarray(np.uint8(np.clip(mapped*255, 0, 255))).resize((thumb_w, thumb_h))
+            image = Image.fromarray(display_rgb(frame.buffers["reference"])).resize((thumb_w, thumb_h))
             sheet.paste(image, (col*thumb_w, row*(thumb_h+24)))
             reference_spp = frame.metadata["render"]["reference_samples"]
             input_spp = frame.metadata["render"]["samples"]
@@ -498,9 +501,7 @@ def contact_sheet(output: Path, configs: dict, groups: list[str], *, first_frame
             comparison_row += 1
             labels.text((4, y+3), f"{group} | frame {i}", fill="white")
             for side, name, spp in ((0, "radiance", input_spp), (1, "reference", reference_spp)):
-                linear = frame.buffers[name].clip(0)
-                display = np.power(linear/(1+linear), 1/2.2)
-                full = Image.fromarray(np.uint8(np.clip(display*255, 0, 255)))
+                full = Image.fromarray(display_rgb(frame.buffers[name]))
                 comparison.paste(full.resize((thumb_w, thumb_h)), (side*thumb_w, y+20))
                 label = f"Noisy input: {spp} SPP" if side == 0 else f"Reference: {spp} SPP"
                 labels.text((side*thumb_w+4, y+thumb_h+23), label, fill="white")

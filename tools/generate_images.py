@@ -11,8 +11,10 @@ import numpy as np
 import OpenEXR
 from PIL import Image
 
+from wavefront_denoiser.preview import display_rgb
 
-def generate_images(source: Path, output: Path | None = None) -> list[Path]:
+
+def generate_images(source: Path, output: Path | None = None, *, exposure: float = 1.0) -> list[Path]:
     source = Path(source)
     if output is None:
         directory, stem = source.parent, source.stem
@@ -46,12 +48,7 @@ def generate_images(source: Path, output: Path | None = None) -> list[Path]:
                 np.frombuffer(plane, dtype=np.float32).reshape(height, width)
                 for plane in planes
             ], axis=-1)
-            if not np.isfinite(rgb).all():
-                raise ValueError(f"Non-finite values in EXR layer: {layer}")
-            # Match dataset previews: Reinhard tone mapping, then gamma 2.2.
-            linear = np.maximum(rgb.astype(np.float64), 0)
-            display = (linear / (1 + linear)) ** (1 / 2.2)
-            images.append(Image.fromarray(np.uint8(np.clip(display * 255, 0, 255))))
+            images.append(Image.fromarray(display_rgb(rgb, exposure)))
     finally:
         exr.close()
 
@@ -70,9 +67,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Output directory or .png base filename (default: beside the EXR). "
              "Adds -radiance.png and -reference.png; existing PNGs are replaced.",
     )
+    parser.add_argument("--exposure", type=float, default=1.0,
+                        help="Positive display multiplier (default: 1). Does not modify HDR data.")
     args = parser.parse_args(argv)
     try:
-        for path in generate_images(args.exr, args.output):
+        for path in generate_images(args.exr, args.output, exposure=args.exposure):
             print(path.resolve())
     except (OSError, ValueError, RuntimeError) as error:
         print(f"generate_images: {error}", file=sys.stderr)

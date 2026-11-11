@@ -13,6 +13,76 @@ import pytest
 from wavefront_denoiser.b2_archive import file_hashes
 from wavefront_denoiser.r2_archive import R2SceneArchiver
 from wavefront_denoiser.r2_native import EMPTY_SHA256, R2NativeClient, R2RequestError, signed_headers
+from wavefront_denoiser.capture_history import compatible_receipt_lock, revision_parent, sha256
+
+
+def revised_capture(root):
+    scene = root / "bmw-scene.json"
+    scene.write_text('{"name":"bmw"}')
+    config = {"scene":"bmw", "scene_file":str(scene)}
+    old = {"renderer_sha256":"old", "configs":{"bmw_clip":config},
+           "assets":{str(scene):sha256(scene)}}
+    history = root / "capture-history"
+    history.mkdir()
+    original = json.dumps(old).encode()
+    digest = hashlib.sha256(original).hexdigest()
+    parent = f"capture-history/{digest}.json"
+    (root / parent).write_bytes(original)
+    validation = history / "bmw-check.json"
+    validation.write_text('{"checked_views":2}')
+    current = dict(old, renderer_sha256="new", revision={"parent_lock":parent,
+        "parent_sha256":digest, "reused_scenes":["bmw"], "reset_scenes":["bistro"],
+        "validation":{"bmw":{"path":"capture-history/bmw-check.json", "sha256":sha256(validation)}}})
+    (root / "capture_lock.json").write_text(json.dumps(current))
+    return current, parent, original
+
+
+def test_revised_lock_preserves_cloud_ancestry_before_replacing_live_lock(tmp_path, r2_api):
+    lock, parent, original = revised_capture(tmp_path)
+    r2_api.objects["run/capture_lock.json"] = original
+    client = R2NativeClient("bucket", "run")
+    client.preflight()
+    names = ["capture_lock.json", parent, "capture-history/bmw-check.json"]
+    inventory = {n:file_hashes(tmp_path/n) for n in names}
+    client.upload_files(tmp_path, names, inventory)
+    puts = [unquote(urlsplit(u).path).removeprefix('/bucket/run/') for method,u in r2_api.calls if method=="PUT"]
+    assert puts.index(parent) < puts.index("capture_lock.json")
+    assert puts.index("capture-history/bmw-check.json") < puts.index("capture_lock.json")
+    assert r2_api.objects[f"run/{parent}"] == original
+    assert r2_api.objects["run/capture_lock.json"] == (tmp_path/"capture_lock.json").read_bytes()
+    assert compatible_receipt_lock(tmp_path,"bmw",lock["revision"]["parent_sha256"],sha256(tmp_path/"capture_lock.json"))
+    assert not compatible_receipt_lock(tmp_path,"bistro",lock["revision"]["parent_sha256"],sha256(tmp_path/"capture_lock.json"))
+    before = r2_api.uploads
+    client.upload_files(tmp_path,names,inventory)
+    assert r2_api.uploads == before
+
+
+@pytest.mark.parametrize("corrupt", ["parent","validation","assets","configs","source"])
+def test_capture_revision_rejects_changed_reuse_evidence(tmp_path, corrupt):
+    lock,parent,_ = revised_capture(tmp_path)
+    if corrupt == "parent":
+        (tmp_path/parent).write_text('{}')
+    elif corrupt == "validation":
+        (tmp_path/"capture-history/bmw-check.json").write_text('{}')
+    elif corrupt == "assets":
+        lock["assets"][str(tmp_path/"bmw-scene.json")] = "changed"
+    elif corrupt == "source":
+        (tmp_path/"bmw-scene.json").write_text('{"name":"changed"}')
+    else:
+        lock["configs"] = {"bmw_clip":dict(lock["configs"]["bmw_clip"],samples=99)}
+    with pytest.raises(ValueError):
+        revision_parent(tmp_path,lock)
+
+
+def test_cloud_revision_refuses_unrelated_remote_lock(tmp_path,r2_api):
+    _,parent,_ = revised_capture(tmp_path)
+    r2_api.objects["run/capture_lock.json"] = b'unrelated dataset'
+    client = R2NativeClient("bucket","run")
+    client.preflight()
+    names = ["capture_lock.json",parent,"capture-history/bmw-check.json"]
+    with pytest.raises(ValueError,match="different capture lock"):
+        client.upload_files(tmp_path,names,{n:file_hashes(tmp_path/n) for n in names})
+    assert r2_api.uploads == 0
 
 
 def test_sigv4_matches_published_aws_s3_signature():
@@ -263,8 +333,12 @@ def test_r2_error_messages_do_not_expose_server_messages_or_credentials(r2_api, 
 
 def test_r2_check_tool_reads_optional_launcher_settings_without_uploads(r2_api, monkeypatch, capsys):
     import importlib.util
+    import sys
+    from types import SimpleNamespace
     tools = Path(__file__).parents[1] / "tools"
     monkeypatch.syspath_prepend(str(tools))
+    # Do not import a developer's credential-bearing local launcher settings.
+    monkeypatch.setitem(sys.modules,"generate_r2_dataset",SimpleNamespace(BUCKET_NAME="bucket",PREFIX="dataset"))
     spec = importlib.util.spec_from_file_location("check_r2_archive", tools / "check_r2_archive.py")
     tool = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tool)
