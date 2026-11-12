@@ -48,8 +48,11 @@ class JointPatchDataset(torch.utils.data.Dataset):
         for frame_index in range(start,start+length):
             if self.storage == "decoded":
                 from .decoded_cache import load_decoded_crop
-                frame, layer = load_decoded_crop(self.sequences.root, group, frame_index,
-                                                 top=top, left=left, size=size)
+                if self.frame_source is None:
+                    frame, layer = load_decoded_crop(self.sequences.root, group, frame_index,
+                                                     top=top, left=left, size=size)
+                else:
+                    frame, layer = self.frame_source.load_crop(group, frame_index, top=top, left=left, size=size)
                 values.append(frame.as_tensors())
                 layers.append(torch.from_numpy(layer).permute(0,3,1,2).contiguous())
                 continue

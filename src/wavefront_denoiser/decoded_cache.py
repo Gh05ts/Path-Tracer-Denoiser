@@ -104,7 +104,8 @@ def verify_decoded_frame(output, group, index, *, verify_hashes=True, allow_miss
         shape = (base["height"], base["width"], len(channels))
         if (info.get("channels") != channels or info.get("shape") != list(shape)
                 or info.get("dtype") != dtype.str or not isinstance(info.get("sha256"), str)
-                or len(info["sha256"]) != 64):
+                or len(info["sha256"]) != 64 or any(c not in "0123456789abcdef" for c in info["sha256"])
+                or type(info.get("size")) is not int or info["size"] < int(np.prod(shape))*dtype.itemsize):
             raise FrameFormatError("Decoded cache array layout mismatch")
         path = directory / filename
         if not path.exists() and allow_missing:

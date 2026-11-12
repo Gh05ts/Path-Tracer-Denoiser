@@ -34,8 +34,8 @@ def training_config(path):
         streaming = config["r2_streaming"]
         if (not isinstance(streaming, dict) or set(streaming)-{"source", "layout", "spool_directory"}
                 or not isinstance(streaming.get("source"), str)
-                or streaming.get("layout", "v5") not in ("v5", "inline")):
-            raise ValueError("r2_streaming needs source r2://BUCKET/PREFIX and layout v5 or inline")
+                or streaming.get("layout", "v5") not in ("v5", "inline", "decoded")):
+            raise ValueError("r2_streaming needs source r2://BUCKET/PREFIX and layout v5, inline or decoded")
         from .r2_archive import R2SceneArchiver
         streaming["source"] = R2SceneArchiver(Path(config["data_root"]), streaming["source"]).destination
         streaming.setdefault("layout", "v5")

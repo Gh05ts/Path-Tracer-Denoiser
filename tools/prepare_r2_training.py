@@ -10,7 +10,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", help="r2://BUCKET/PREFIX")
     parser.add_argument("output", help="New local metadata directory")
-    parser.add_argument("--layout", choices=("inline", "v5"), default="inline")
+    parser.add_argument("--layout", choices=("decoded", "inline", "v5"), default="decoded")
     parser.add_argument("--train-groups", nargs="+")
     parser.add_argument("--validation-groups", nargs="+")
     args = parser.parse_args(argv)

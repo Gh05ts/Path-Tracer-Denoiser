@@ -155,7 +155,8 @@ def verify_v5_record(root: Path, group: str, index: int, *, verify_images=True) 
         raise FrameFormatError("Unknown v5 frame")
     if dataset.get("storage") == "decoded":
         from .decoded_cache import verify_decoded_frame
-        base, _ = verify_decoded_frame(root, group, index, verify_hashes=verify_images)
+        base, _ = verify_decoded_frame(root, group, index, verify_hashes=verify_images,
+                                       allow_missing=not verify_images)
         return dataset, base
     relative = Path(group) / f"frame_{index:06d}"
     record = read_json(root / "frames" / relative / "manifest.json")

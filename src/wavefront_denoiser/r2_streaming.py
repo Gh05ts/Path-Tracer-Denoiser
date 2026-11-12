@@ -11,20 +11,21 @@ from .joint_data import joint_inventory
 from .r2_archive import R2SceneArchiver
 
 
-LAYOUTS = ("v5", "inline")
+LAYOUTS = ("v5", "inline", "decoded")
 SOURCE_RECORD = "r2-source.json"
+DECODED_LOCKS = ("capture_lock.json", "sample_layers_lock.json", "decoded_cache_lock.json")
 
 
 def image_keys(group, index, layout):
     relative = f"{group}/frame_{index:06d}"
-    if layout not in LAYOUTS:
-        raise ValueError("R2 layout must be v5 or inline")
+    if layout not in ("v5", "inline"):
+        raise ValueError("EXR layout must be v5 or inline")
     return ((f"base/{relative}/frame.exr", f"layers/{relative}/layers.exr") if layout == "v5"
             else (f"{relative}/frame.exr", f"sample_layers/{relative}/layers.exr"))
 
 
 class R2FrameSource:
-    """Keep metadata locally; download and release two EXRs per frame read.
+    """Keep metadata locally; download and release two payloads per frame read.
 
     This deliberately has no persistent image cache, workers or prefetch queue.
     Crop/augmentation and all training math stay in the existing dataset/trainer.
@@ -33,7 +34,7 @@ class R2FrameSource:
         self.root = Path(root)
         self.layout = layout
         if layout not in LAYOUTS:
-            raise ValueError("R2 layout must be v5 or inline")
+            raise ValueError("R2 layout must be v5, inline or decoded")
         remote = R2SceneArchiver(self.root, source)
         self.source, self.client = remote.destination, remote.native
         self.spool_directory = spool_directory
@@ -42,8 +43,11 @@ class R2FrameSource:
         record = read_json(self.root/SOURCE_RECORD)
         if record.get("source") != self.source or record.get("layout") != layout:
             raise ValueError("R2 source/layout disagrees with prepared metadata snapshot")
+        if (read_v5_dataset(self.root).get("storage") == "decoded") != (layout == "decoded"):
+            raise ValueError("R2 layout disagrees with snapshot storage")
         self.selected = set(record["selected"]["train"]+record["selected"]["validation"])
         self.stats = {"downloaded_bytes": 0, "downloaded_objects": 0, "decoded_frames": 0,
+                      "decoded_cache_frames": 0,
                       "persistent_image_cache": False, "prefetch": False}
 
     def preflight(self):
@@ -51,11 +55,45 @@ class R2FrameSource:
         if read_json(self.root/SOURCE_RECORD).get("r2_endpoint") != self.client.endpoint:
             raise ValueError("R2 account endpoint disagrees with prepared metadata snapshot")
 
-    def load_frame(self, group, index):
+    def _validate_frame(self, group, index):
         # Group/index validation precedes path construction or remote requests.
         descriptor = read_v5_dataset(self.root)
         if group not in self.selected or type(index) is not int or not 0 <= index < descriptor["groups"][group]["frame_count"]:
             raise ValueError("Unknown R2 frame")
+
+    def load_crop(self, group, index, *, top=0, left=0, size=None):
+        """Download verified arrays, copy the requested crop, then release files."""
+        if self.layout != "decoded":
+            raise ValueError("Decoded crop streaming requires layout decoded")
+        self._validate_frame(group, index)
+        from .decoded_cache import ARRAYS, load_decoded_crop, verify_decoded_frame
+        # Recheck metadata bindings before using remote object keys or sizes.
+        _, record = verify_decoded_frame(self.root, group, index, verify_hashes=False, allow_missing=True)
+        relative = Path(group)/f"frame_{index:06d}"
+        with tempfile.TemporaryDirectory(prefix="ntasad-r2-frame-", dir=self.spool_directory) as name:
+            staging = Path(name)
+            manifests = (relative/"manifest.json", Path("sample_layers")/relative/"manifest.json",
+                         Path("decoded")/relative/"manifest.json")
+            for path in [Path(key) for key in DECODED_LOCKS] + list(manifests):
+                target = staging/path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(self.root/path, target)
+            for filename in ARRAYS:
+                key = (Path("decoded")/relative/filename).as_posix()
+                info = record["arrays"][filename]
+                result = self.client.download_file(key, staging/key, sha256=info["sha256"], size=info["size"])
+                self.stats["downloaded_bytes"] += result["size"]
+                self.stats["downloaded_objects"] += 1
+            crop = load_decoded_crop(staging, group, index, top=top, left=left, size=size)
+            self.stats["decoded_cache_frames"] += 1
+            return crop
+
+    def load_frame(self, group, index):
+        if self.layout == "decoded":
+            from .adaptive_data import AdaptiveFrame
+            base, layers = self.load_crop(group, index)
+            return AdaptiveFrame(base, layers)
+        self._validate_frame(group, index)
         relative = Path(group)/f"frame_{index:06d}"
         with tempfile.TemporaryDirectory(prefix="ntasad-r2-frame-", dir=self.spool_directory) as name:
             staging = Path(name)
@@ -77,15 +115,14 @@ class R2FrameSource:
 
 
 def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, validation_groups=None):
-    """Freeze selected completed clips from R2, without GETs of any EXR.
+    """Freeze selected completed clips from R2, downloading JSON only.
 
-    Inline archives are normalized to v5 metadata locally; source object keys
-    and source pixels are never rewritten or uploaded. Only current-lock scene
-    receipts are accepted in this first implementation. Earlier clips may use
-    separately published, receipt-bound sample_layer_configs/GROUP.json files.
+    Decoded archives retain the original capture/cache metadata paths. Inline
+    EXR archives are normalized to v5 metadata locally. Only current-lock scene
+    receipts are accepted; preparation never rewrites remote objects.
     """
     if layout not in LAYOUTS:
-        raise ValueError("R2 layout must be v5 or inline")
+        raise ValueError("R2 layout must be v5, inline or decoded")
     output = Path(output).resolve()
     if output.exists():
         raise FileExistsError(f"Metadata snapshot already exists: {output}")
@@ -121,15 +158,23 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
                     or layer_lock.get("base_capture_lock_sha256") != digest(root/"capture_lock.json")
                     or layer_lock.get("spps") != [1, 2, 8, 16, 32]):
                 raise ValueError("Inline R2 capture/split/sample-layer locks disagree")
-            reserved = layer_lock["reserved_reference_samples"]
-            descriptor = {"format": "wavefront-ntasad-v5-dataset", "version": 1,
-                "dataset_id": lock["plan"]["dataset_id"]+"-streaming",
-                "reference_status": split["reference_status"], "partitions": split["partitions"],
-                "groups": {g: {"scene": c["scene"], "frame_count": len(c["frames"]),
-                    "source_config": c, "reserved_reference_samples": reserved,
-                    "sample_layers": layer_layout(c, reserved)} for g,c in lock["configs"].items()}}
-            write_json(root/"dataset.json", descriptor)
-            read_v5_dataset(root)
+            if layout == "decoded":
+                cache_lock = fetch("decoded_cache_lock.json")
+                if cache_lock["configs"] != lock["configs"]:
+                    raise ValueError("Decoded cache source configs disagree with capture lock")
+                descriptor = read_v5_dataset(root)
+                if descriptor["partitions"] != split["partitions"]:
+                    raise ValueError("Decoded cache partitions disagree with source split")
+            else:
+                reserved = layer_lock["reserved_reference_samples"]
+                descriptor = {"format": "wavefront-ntasad-v5-dataset", "version": 1,
+                    "dataset_id": lock["plan"]["dataset_id"]+"-streaming",
+                    "reference_status": split["reference_status"], "partitions": split["partitions"],
+                    "groups": {g: {"scene": c["scene"], "frame_count": len(c["frames"]),
+                        "source_config": c, "reserved_reference_samples": reserved,
+                        "sample_layers": layer_layout(c, reserved)} for g,c in lock["configs"].items()}}
+                write_json(root/"dataset.json", descriptor)
+                read_v5_dataset(root)
         selected = {p: names if names is not None else descriptor["partitions"][p]
                     for p,names in (("train", train_groups), ("validation", validation_groups))}
         for partition, groups in selected.items():
@@ -143,7 +188,7 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
             if not isinstance(scene, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", scene):
                 raise ValueError("Invalid R2 scene identifier")
             receipt = None
-            if layout == "inline":
+            if layout in ("inline", "decoded"):
                 config = info["source_config"]
                 expected = dict(config, sample_layers=info["sample_layers"],
                                 reserved_reference_samples=info["reserved_reference_samples"])
@@ -157,10 +202,15 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
                             or receipt.get("destination") != remote.destination
                             or receipt.get("r2_endpoint") != client.endpoint
                             or receipt.get("capture_lock_sha256") != digest(root/"capture_lock.json")):
-                        raise ValueError("Inline streaming requires a verified receipt for the current capture lock")
+                        raise ValueError("Inline/decoded streaming requires a verified receipt for the current capture lock")
                     receipts[scene] = receipt
                 receipt = receipts[scene]
-                if not inline_group:
+                if layout == "decoded":
+                    for key in DECODED_LOCKS:
+                        record = receipt["files"].get(key)
+                        if record is None or record["sha256"] != digest(root/key):
+                            raise ValueError("Decoded archive receipt does not bind the source/cache locks")
+                if layout == "inline" and not inline_group:
                     # Backfills retain the capture-time boundary/renderer lock.
                     # Their own per-clip config is bound by the scene receipt.
                     key = f"sample_layer_configs/{group}.json"
@@ -171,6 +221,24 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
                         raise ValueError(f"Backfill sample-layer config disagrees with source: {group}")
             for index in range(info["frame_count"]):
                 relative = Path(group)/f"frame_{index:06d}"
+                if layout == "decoded":
+                    from .decoded_cache import ARRAYS, verify_decoded_frame
+                    for key in (relative/"manifest.json", Path("sample_layers")/relative/"manifest.json",
+                                Path("decoded")/relative/"manifest.json"):
+                        key = key.as_posix()
+                        record = receipt["files"].get(key)
+                        if record is None:
+                            raise ValueError(f"Decoded archive receipt is missing metadata: {key}")
+                        fetch(key, expected=record["sha256"])
+                    _, record = verify_decoded_frame(root, group, index, verify_hashes=False, allow_missing=True)
+                    for filename in ARRAYS:
+                        key = (Path("decoded")/relative/filename).as_posix()
+                        expected = record["arrays"][filename]
+                        archived = receipt["files"].get(key)
+                        if (key not in files or archived is None or files[key]["size"] != expected["size"]
+                                or archived["size"] != expected["size"] or archived["sha256"] != expected["sha256"]):
+                            raise ValueError(f"Missing or inconsistent R2 decoded array (clip is not complete): {key}")
+                    continue
                 for category, key in zip(("base", "layers"), image_keys(group, index, layout)):
                     if key not in files:
                         raise ValueError(f"Missing R2 image (clip is not complete): {key}")
@@ -200,7 +268,7 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
                 prefix = "base/" if layout == "v5" else ""
                 relative = f"{group}/frame_{index:06d}/manifest.json"
                 if prefix+relative in files:
-                    fetch(prefix+relative, "base/"+relative)
+                    fetch(prefix+relative, relative if layout == "decoded" else "base/"+relative)
         inventory = joint_inventory(root, selected, verify_images=False)
         write_json(root/SOURCE_RECORD, {"source": remote.destination, "layout": layout,
             "r2_endpoint": client.endpoint, "selected": selected,

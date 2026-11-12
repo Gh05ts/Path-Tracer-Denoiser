@@ -3,6 +3,7 @@ import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
+import shutil
 from urllib.parse import unquote, urlsplit
 
 import pytest
@@ -11,12 +12,12 @@ import torch
 from test_adaptive_dataset import source_dataset
 from test_joint_training import joint_dataset, config_for
 from test_r2_native import r2_api
-from wavefront_denoiser.adaptive_data import read_json
+from wavefront_denoiser.adaptive_data import read_json, read_v5_dataset
 from wavefront_denoiser.dataset_generation import digest
 from wavefront_denoiser.joint_checkpoint import load_joint_checkpoint
 from wavefront_denoiser.joint_data import JointPatchDataset
 from wavefront_denoiser.joint_training import train_joint
-from wavefront_denoiser.r2_native import R2NativeClient
+from wavefront_denoiser.r2_native import R2NativeClient, R2RequestError
 from wavefront_denoiser.r2_streaming import R2FrameSource, prepare_r2_metadata
 
 
@@ -309,3 +310,198 @@ def test_download_retries_from_zero_and_limits_memory(r2_api, tmp_path, monkeypa
         client.download_file("frame.exr", target, max_bytes=10)
     assert target.read_bytes() == b"keep-existing"
     assert not list(tmp_path.glob("*.partial"))
+
+
+@pytest.fixture
+def decoded_cloud(inline_cloud, tmp_path):
+    """Publish the real generator's cache format, with no remote EXR payloads."""
+    from wavefront_denoiser.dataset_generation import write_json
+    from wavefront_denoiser.decoded_cache import BackgroundDecodedCache, decode_frame
+    original, api = inline_cloud
+    root = tmp_path/"decoded-local"
+    root.mkdir()
+    for filename in ("capture_lock.json", "split.json", "sample_layers_lock.json"):
+        (root/filename).write_bytes(api.objects["dataset/"+filename])
+    configs = read_json(root/"capture_lock.json")["configs"]
+    for group in configs:
+        for category, destination in (("base", root/group), ("layers", root/"sample_layers"/group)):
+            if (original/category/group).exists():
+                shutil.copytree(original/category/group, destination)
+    with_cache = BackgroundDecodedCache(root, configs, after_group=next(iter(configs)))
+    with_cache.close()
+    for group in configs:
+        if (root/"sample_layers"/group).exists():
+            for index in range(len(configs[group]["frames"])):
+                decode_frame(root, group, index)
+    # Preserve reserved test identities, but never provide their pixels.
+    descriptor = read_json(original/"dataset.json")
+    for group in descriptor["partitions"]["test"]:
+        for path in (original.parent/"v4"/group).rglob("manifest.json"):
+            target = root/path.relative_to(original.parent/"v4")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target)
+    for path in root.rglob("*.exr"):
+        path.unlink()
+    api.objects.clear()
+    for path in root.rglob("*"):
+        if path.is_file():
+            api.objects["dataset/"+path.relative_to(root).as_posix()] = path.read_bytes()
+    global_keys = ("capture_lock.json", "sample_layers_lock.json", "decoded_cache_lock.json", "split.json")
+    for group, config in configs.items():
+        scene = config["scene"]
+        keys = set(global_keys)
+        for candidate, candidate_config in configs.items():
+            if candidate_config["scene"] == scene:
+                for prefix in (candidate+"/", "sample_layers/"+candidate+"/", "decoded/"+candidate+"/"):
+                    keys.update(k.removeprefix("dataset/") for k in api.objects if k.startswith("dataset/"+prefix))
+        files = {k: {"sha256": hashlib.sha256(api.objects["dataset/"+k]).hexdigest(),
+                     "size": len(api.objects["dataset/"+k])} for k in keys}
+        receipt = {"format": "wavefront-r2-scene-archive", "version": 1, "status": "verified",
+            "scene": scene, "destination": "r2://bucket/dataset",
+            "r2_endpoint": "https://"+"a"*32+".r2.cloudflarestorage.com",
+            "capture_lock_sha256": digest(root/"capture_lock.json"), "files": files}
+        write_json(root/"r2-archives"/(scene+".json"), receipt)
+        api.objects[f"dataset/r2-archives/{scene}.json"] = json.dumps(receipt).encode()
+    return root, api
+
+
+def test_decoded_metadata_and_streamed_crops_need_no_exrs(decoded_cloud, tmp_path, monkeypatch):
+    import OpenEXR
+    from wavefront_denoiser.joint_data import joint_inventory
+    root, api = decoded_cloud
+    monkeypatch.setattr(OpenEXR, "InputFile", lambda *a, **k: pytest.fail("Streaming decoded an EXR"))
+    snapshot = tmp_path/"decoded-metadata"
+    report = prepare_r2_metadata("r2://bucket/dataset", snapshot, layout="decoded")
+    assert report["images_downloaded"] == 0
+    assert not list(snapshot.rglob("*.npy"))
+    assert all(not urlsplit(url).path.endswith((".exr", ".npy")) for _, url in api.calls)
+    assert read_json(snapshot/"train-streaming-pilot.json")["r2_streaming"]["layout"] == "decoded"
+    # Metadata-only audits work; a local byte audit still requires the arrays.
+    joint_inventory(snapshot, verify_images=False)
+    with pytest.raises(FileNotFoundError):
+        joint_inventory(snapshot)
+    source = R2FrameSource(snapshot, "r2://bucket/dataset", layout="decoded", spool_directory=tmp_path/"spool")
+    source.preflight()
+    for partition in ("train", "validation"):
+        for augment in (False, True):
+            local = JointPatchDataset(root, partition=partition, patch_size=5, patches_per_window=3, augment=augment)
+            streamed = JointPatchDataset(snapshot, partition=partition, patch_size=5, patches_per_window=3,
+                                         augment=augment, frame_source=source)
+            torch.manual_seed(19)
+            a = local[1]
+            torch.manual_seed(19)
+            b = streamed[1]
+            torch.testing.assert_close(a["layers"], b["layers"], rtol=0, atol=0)
+            torch.testing.assert_close(b["layers"][:,2], b["buffers"]["radiance"], rtol=0, atol=0)
+            for key in a["buffers"]:
+                torch.testing.assert_close(a["buffers"][key], b["buffers"][key], rtol=0, atol=0)
+    assert source.stats["decoded_cache_frames"] == 20
+    assert source.stats["decoded_frames"] == 0
+    assert source.stats["downloaded_objects"] == 40
+    assert not list((tmp_path/"spool").iterdir())
+    assert api.uploads == 0
+    assert not any(urlsplit(u).path.endswith(".exr") or ("test_scene" in u and u.endswith(".npy")) for _, u in api.calls)
+    calls = len(api.calls)
+    test_group = read_v5_dataset(root)["partitions"]["test"][0]
+    for group, index in (("../other", 0), (test_group, 0), (local.sequences.windows[0][0], -1)):
+        with pytest.raises(ValueError, match="Unknown R2 frame"):
+            source.load_crop(group, index, size=5)
+    assert len(api.calls) == calls
+
+
+def test_decoded_streaming_training_and_resume_match_local(decoded_cloud, tmp_path, monkeypatch):
+    import OpenEXR
+    root, api = decoded_cloud
+    monkeypatch.setattr(OpenEXR, "InputFile", lambda *a, **k: pytest.fail("Training decoded an EXR"))
+    snapshot = tmp_path/"metadata"
+    prepare_r2_metadata("r2://bucket/dataset", snapshot, layout="decoded")
+    config_path, config = config_for(root)
+    train_joint(config_path, tmp_path/"local", "cpu")
+    config.update(data_root=str(snapshot), r2_streaming={"source": "r2://bucket/dataset", "layout": "decoded",
+                                                       "spool_directory": str(tmp_path/"spool")})
+    config_path.write_text(json.dumps(config))
+    full = train_joint(config_path, tmp_path/"streamed", "cpu")
+    config["epochs"] = 1
+    config_path.write_text(json.dumps(config))
+    train_joint(config_path, tmp_path/"first", "cpu")
+    config["epochs"] = 2
+    config_path.write_text(json.dumps(config))
+    resumed = train_joint(config_path, tmp_path/"resumed", "cpu", resume=tmp_path/"first/last.pt")
+    local, _ = load_joint_checkpoint(tmp_path/"local/last.pt")
+    streamed, payload = load_joint_checkpoint(tmp_path/"streamed/last.pt")
+    continued, resumed_payload = load_joint_checkpoint(tmp_path/"resumed/last.pt")
+    for key, value in local.state_dict().items():
+        torch.testing.assert_close(value, streamed.state_dict()[key], rtol=0, atol=0)
+        torch.testing.assert_close(value, continued.state_dict()[key], rtol=0, atol=0)
+    for key in ("torch", "generator"):
+        assert torch.equal(payload["training"]["rng"][key], resumed_payload["training"]["rng"][key])
+    assert full["global_step"] == resumed["global_step"] == 8
+    assert full["r2_streaming"]["decoded_cache_frames"] > 0
+    assert full["r2_streaming"]["decoded_frames"] == 0
+    assert not list((tmp_path/"spool").iterdir())
+    assert not any(u.endswith(".exr") for _, u in api.calls)
+
+
+@pytest.mark.parametrize("problem", ["missing", "unreceipted", "receipt_hash", "manifest", "lock"])
+def test_decoded_preparation_rejects_incomplete_or_mismatched_data(decoded_cloud, tmp_path, problem):
+    root, api = decoded_cloud
+    group = next(iter(read_json(root/"capture_lock.json")["configs"]))
+    scene = read_json(root/"capture_lock.json")["configs"][group]["scene"]
+    key = f"decoded/{group}/frame_000000/float.npy"
+    receipt_key = f"dataset/r2-archives/{scene}.json"
+    receipt = json.loads(api.objects[receipt_key])
+    if problem == "missing":
+        del api.objects["dataset/"+key]
+    elif problem == "unreceipted":
+        del receipt["files"][key]
+    elif problem == "receipt_hash":
+        receipt["files"][key]["sha256"] = "0"*64
+    elif problem == "manifest":
+        key = f"decoded/{group}/frame_000000/manifest.json"
+        value = json.loads(api.objects["dataset/"+key])
+        value["source_manifest_sha256"] = "0"*64
+        data = json.dumps(value).encode()
+        api.objects["dataset/"+key] = data
+        receipt["files"][key] = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+    else:
+        receipt["files"]["decoded_cache_lock.json"]["sha256"] = "0"*64
+    api.objects[receipt_key] = json.dumps(receipt).encode()
+    with pytest.raises(ValueError):
+        prepare_r2_metadata("r2://bucket/dataset", tmp_path/problem, layout="decoded")
+    assert not (tmp_path/problem).exists()
+    assert not list(tmp_path.glob(".r2-metadata-*"))
+    assert not any(u.endswith((".npy", ".exr")) for _, u in api.calls)
+
+
+@pytest.mark.parametrize("problem", ["corrupt", "missing", "wrong_header"])
+def test_decoded_download_failure_cleans_spool(decoded_cloud, tmp_path, problem):
+    root, api = decoded_cloud
+    group = next(iter(read_json(root/"capture_lock.json")["configs"]))
+    key = f"dataset/decoded/{group}/frame_000000/float.npy"
+    if problem == "wrong_header":
+        # A published object can match its digest yet contain an invalid NPY header.
+        manifest_key = key.removesuffix("float.npy")+"manifest.json"
+        manifest = json.loads(api.objects[manifest_key])
+        data = b"x"*len(api.objects[key])
+        api.objects[key] = data
+        manifest["arrays"]["float.npy"]["sha256"] = hashlib.sha256(data).hexdigest()
+        data = json.dumps(manifest).encode()
+        api.objects[manifest_key] = data
+        scene = read_json(root/"capture_lock.json")["configs"][group]["scene"]
+        receipt_key = f"dataset/r2-archives/{scene}.json"
+        receipt = json.loads(api.objects[receipt_key])
+        receipt["files"][key.removeprefix("dataset/")]["sha256"] = manifest["arrays"]["float.npy"]["sha256"]
+        receipt["files"][manifest_key.removeprefix("dataset/")] = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+        api.objects[receipt_key] = json.dumps(receipt).encode()
+    snapshot = tmp_path/"metadata"
+    prepare_r2_metadata("r2://bucket/dataset", snapshot, layout="decoded")
+    if problem == "corrupt":
+        api.objects[key] = b"x"*len(api.objects[key])
+    elif problem == "missing":
+        del api.objects[key]
+    source = R2FrameSource(snapshot, "r2://bucket/dataset", layout="decoded", spool_directory=tmp_path/"spool")
+    source.preflight()
+    with pytest.raises((ValueError, R2RequestError)):
+        source.load_crop(group, 0, size=5)
+    assert not list((tmp_path/"spool").iterdir())
+    assert not any(u.endswith(".exr") for _, u in api.calls)

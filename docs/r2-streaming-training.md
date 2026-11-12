@@ -3,11 +3,11 @@
 ## Scope and current implementation
 
 The production dataset is generated exclusively by the **v4 capture tools** and
-streamed from `r2://denoiser/denoiser-v4` using `--layout inline` (the preparation
-CLI default). No v5 capture run, v5 dataset export, or duplicate base capture is
-required. The optional `v5` layout remains supported for compatibility. Internally
-the adapter reuses the existing joint reader's metadata schema and validators;
-the local `base/layers/frames` JSON directories are an index, not a second dataset.
+streamed from `r2://denoiser/denoiser-v4` using `--layout decoded` (the preparation
+CLI default). This reads the lossless arrays published by the sequential and
+distributed generators. No v5 capture run or dataset export is required. The
+explicit `inline` and `v5` EXR layouts remain supported for compatibility.
+Internally the adapter reuses the joint reader's metadata schema and validators.
 
 R2 remains the source of dataset pixels. Local storage holds a frozen metadata
 snapshot, training outputs, and temporary image downloads. The first version is
@@ -19,25 +19,37 @@ The training path is:
 
 ```text
 R2 metadata -> local frozen snapshot -> deterministic sequence/crop order
-R2 frame + layer EXRs -> temporary files -> verified decode -> shared crop
+R2 float.npy + uint.npy -> verified temporary files -> memory-mapped shared crop
   -> sampler -> allocation/replay -> denoiser -> sequence loss -> both optimizers
 ```
 
-One frame's base EXR and companion EXR are downloaded in chunks, checked against
-the metadata SHA-256, and decoded using the existing v5 readers. Both temporary
-files are then removed, including on errors. Only the crop survives into the
-training window. A five-frame crop window stays in RAM; the dataset stays in R2.
-EXR decoding still reads whole frames, so temporary disk/RAM use is bounded by
-frame size, rather than by patch size. The minimal version has no persistent
-image cache or prefetch buffer and will download overlapping windows repeatedly.
-Its I/O throughput is not a production performance target.
+For `decoded`, one frame's `float.npy` and `uint.npy` are downloaded in chunks,
+checked against their exact byte sizes and SHA-256, and opened as read-only
+memory maps. The existing decoded reader copies just the selected crop, including
+all six sample layers, reference RGB, guides and integer counts. No EXR is
+downloaded or decoded. Source EXR manifests remain part of the provenance audit.
+Both temporary arrays are removed after reading, including on errors; only the
+crop survives into the training window. At 1920x1080 their combined size is about
+307 MB. Downloads still transfer the complete arrays, not a remote crop or byte
+range. The minimal version has no persistent cache or prefetch buffer and will
+download overlapping windows repeatedly. Removing EXR decoding therefore does
+not establish production training throughput; measure transfer time separately.
 
-The loader supports two remote layouts:
+The loader supports three remote layouts:
 
 | Layout | Base image | Additional layers |
 | --- | --- | --- |
+| `decoded` (default; all buffers and layers) | `decoded/GROUP/frame_NNNNNN/float.npy` | `decoded/GROUP/frame_NNNNNN/uint.npy` |
 | `inline` (current capture archive) | `GROUP/frame_NNNNNN/frame.exr` | `sample_layers/GROUP/frame_NNNNNN/layers.exr` |
 | `v5` (standalone companion dataset) | `base/GROUP/frame_NNNNNN/frame.exr` | `layers/GROUP/frame_NNNNNN/layers.exr` |
+
+The decoded layout keeps `capture_lock.json`, `sample_layers_lock.json`,
+`decoded_cache_lock.json`, and the original base/layer/cache manifest paths.
+The receipt must bind all three locks, selected manifests, and both arrays.
+Array declarations, source bindings, channel layouts and listed byte sizes are
+checked during preparation; every payload is hashed during its download and its
+NPY header is validated before use. Missing decoded arrays are an error, with no
+EXR fallback. EXR payloads need not be present in the training source.
 
 The inline layout is converted to v5 **metadata** in the local snapshot. Neither
 remote keys nor image bytes are changed. The existing 4-SPP radiance is reused;
@@ -82,6 +94,15 @@ unregistered EXRs, editing an old receipt, or relabelling an incomplete clip doe
 not make it eligible. Until completion, select only ready clips explicitly;
 requesting the full training partition will reject missing backfills.
 
+Decoded training also requires the separate **44-clip / 352-frame decoded
+backfill**, recorded in `DECODED_BACKFILL.md`, including the stopped eighth
+Bistro clip. The original decoded-cache boundary stays fixed. A backfilled
+frame is eligible when it has a valid decoded manifest bound to that cache lock
+and its original base/layer manifests, and a current verified scene receipt
+includes both arrays and all metadata. It need not be added to the automatic
+decode group list. Until those backfills are published, select only completed
+decoded clips explicitly. This loader change does not execute backfills.
+
 ## Starting a technical pilot after assets are ready
 
 Use an environment with the project and its `[train,test]` dependencies installed.
@@ -96,11 +117,12 @@ export R2_SECRET_ACCESS_KEY=YOUR_SECRET_ACCESS_KEY
 ```
 
 Select completed clips from the registered training and validation scenes. Replace
-the example IDs below with clips that actually have complete sample layers:
+the example IDs below with clips that have complete decoded arrays and verified
+scene receipts:
 
 ```bash
 python3 tools/prepare_r2_training.py r2://denoiser/denoiser-v4 \
-  runs/r2-pilot-metadata --layout inline \
+  runs/r2-pilot-metadata --layout decoded \
   --train-groups COMPLETED_TRAIN_GROUP \
   --validation-groups COMPLETED_VALIDATION_GROUP
 
@@ -112,7 +134,7 @@ CUBLAS_WORKSPACE_CONFIG=:4096:8 python3 -m wavefront_denoiser train-adaptive \
 Preparation only lists objects and downloads JSON. It validates scene partitions,
 locks, completion records, manifest hashes, declared sample ranges, and known
 scene/content overlap. It writes a new metadata directory atomically and refuses
-to overwrite an existing snapshot. No EXR GET, upload, or remote deletion occurs
+to overwrite an existing snapshot. No EXR/NPY GET, upload, or remote deletion occurs
 during preparation. Omitting group selectors requests all train/validation clips;
 this fails until all required clips are complete.
 
@@ -122,7 +144,7 @@ both networks. These are technical-check settings. Increase crop sizes/widths
 for the actual training experiment. Each selected eight-frame clip supplies four
 five-frame windows; this pilot runs all of them, without a step limit.
 
-An optional `spool_directory` inside `r2_streaming` places temporary EXRs on a
+An optional `spool_directory` inside `r2_streaming` places temporary arrays on a
 chosen local disk. Relative paths resolve against the training config. The
 default is the system temporary directory. Every run uses the same training CLI,
 loss, augmentation, and checkpoint formats as local training. There are no new
@@ -131,15 +153,16 @@ training dependencies beyond the existing ones.
 ```json
 "r2_streaming": {
   "source": "r2://denoiser/denoiser-v4",
-  "layout": "inline",
+  "layout": "decoded",
   "spool_directory": "../r2-spool"
 }
 ```
 
-`summary.json` reports downloaded bytes/objects and decoded frames. Configuration
+`summary.json` reports downloaded bytes/objects, `decoded_cache_frames` (array
+reads), and `decoded_frames` (EXR decodes; zero for decoded streaming). Configuration
 and checkpoint provenance pin the metadata inventory, source, layout and account
-endpoint. Each downloaded image is SHA-256 verified before use. The up-front
-inventory checks JSON; it does not claim to have verified every remote image byte
+endpoint. Each downloaded payload is SHA-256 verified before use. The up-front
+inventory checks JSON; it does not claim to have verified every remote payload byte
 before training. Local-only training retains its existing up-front byte checks.
 
 Resume by increasing `epochs` in the same config, selecting a new run directory,
@@ -158,8 +181,8 @@ must be labelled as such and kept outside checkpoint selection/quality reports.
 
 ## Pilot acceptance checks
 
-1. Metadata preparation downloads zero EXRs and rejects missing/wrong sample
-   layers, corrupt manifests, cross-partition identities and stale receipts.
+1. Metadata preparation downloads JSON only and rejects missing arrays or layers,
+   corrupt manifests, cross-partition identities and stale receipts.
 2. The same window/crop/seed produces identical local and streamed tensors,
    including motion transforms, layer ordering and 4-SPP reuse.
 3. Both networks receive finite, nonzero gradients and update their weights.
@@ -169,14 +192,15 @@ must be labelled as such and kept outside checkpoint selection/quality reports.
    identical weights. Two uninterrupted epochs equal one epoch plus resume.
    Repeat the resume check on the actual CUDA host before production training.
 5. Network interruptions retry from zero. Corrupt/truncated payloads fail before
-   use. Temporary downloads disappear after success or failure. Test EXRs are
+   use. Temporary downloads disappear after success or failure. Test payloads are
    never requested for training or checkpoint selection.
 6. After real assets arrive, record GPU model, config, source snapshot digest,
    losses/gradients, allocation statistics, bytes downloaded, wall time and peak
    disk/RAM/VRAM use in a pilot report. A passing small pilot establishes technical
    readiness, not learned-sampling effectiveness.
 
-The automated fake-R2 tests use real EXRs and the actual trainer. They validate
+The automated fake-R2 tests use real generated arrays/EXRs and the actual trainer.
+Decoded tests work with no remote EXRs and fail on any attempted EXR decode. They validate
 the data and optimization path; live R2 credentials/network behavior, cloud
 throughput and production CUDA memory/performance remain to be checked.
 
@@ -234,7 +258,7 @@ decoded RAM, pinned memory, GPU tensors and checkpoints need separate budgets.
 | Component | Planned behavior |
 | --- | --- |
 | Object identity | Account endpoint + bucket/key + expected SHA-256; immutable content checked before reuse |
-| Reuse cache (16 GB) | Byte-accounted LRU of verified base/layer EXRs, with pinned active entries and atomic promotion |
+| Reuse cache (16 GB) | Byte-accounted LRU of verified decoded arrays (or EXRs in compatibility mode), with pinned active entries and atomic promotion |
 | Prefetch (4 GB) | Bounded background queue for upcoming deterministic windows; includes reservations, partial files and completed prefetched files |
 | Scheduling | Deduplicate shared frame requests; sample order and augmentation RNG remain owned by the trainer |
 | Eviction | Evict only unpinned completed entries; apply backpressure before issuing a download if quota cannot be reserved |
