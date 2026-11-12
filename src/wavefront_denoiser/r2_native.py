@@ -150,12 +150,14 @@ class R2NativeClient:
         return (remote is not None and re.fullmatch(r"[0-9a-fA-F]{32}", remote.get("etag", "")) is not None
                 and remote["etag"].lower() == expected["md5"] and remote.get("size") == expected["size"])
 
-    def upload_file(self, path: Path, relative: str, expected: dict):
+    def upload_file(self, path: Path, relative: str, expected: dict, *, create_only=False):
         if expected["size"] > 5_000_000_000:
             raise ValueError("Native R2 archiving supports individual files up to 5 GB")
         headers = {"content-length": str(expected["size"]), "content-type": "application/octet-stream",
                    "content-md5": base64.b64encode(bytes.fromhex(expected["md5"])).decode(),
                    "x-amz-storage-class": "STANDARD", "x-amz-meta-sha256": expected["sha256"]}
+        if create_only:
+            headers["if-none-match"] = "*"
         _, response = self._request("PUT", relative, path=path, payload_hash=expected["sha256"], headers=headers)
         if response.get("etag", "").strip('"').lower() != expected["md5"]:
             raise ValueError("R2 upload ETag checksum mismatch; local EXRs were retained")
@@ -184,7 +186,7 @@ class R2NativeClient:
                 continue
             if not self.matches(remote.get(relative), inventory[relative]):
                 self.upload_file(root / relative, relative, inventory[relative])
-                if relative.endswith(".exr") or i == len(available):
+                if relative.endswith((".exr", ".npy")) or i == len(available):
                     print(f"R2 upload {i}/{len(available)}: {relative}", flush=True)
 
     def verify_files(self, inventory: dict):

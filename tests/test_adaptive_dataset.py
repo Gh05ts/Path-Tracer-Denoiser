@@ -60,6 +60,21 @@ def fake_layers(directory, base, layout):
     (directory / "manifest.json").write_text(json.dumps(metadata))
 
 
+def test_layer_reads_preserve_spp_and_rgb_order(tmp_path, make_frame):
+    base = read_manifest(make_frame(metadata_mutate=lambda m: m.update(scene_fingerprint="fixture")))
+    layout = layer_layout({"samples": 4, "reference_samples": 16, "sample_start": 0,
+                           "sample_stride": 128, "frames": [{}]}, 64)
+    directory = tmp_path / "layers"
+    fake_layers(directory, base, layout)
+    _, images = read_layer_capture(directory, base, layout)
+    assert set(images) == set(NEW_LAYER_SPP)
+    for spp, image in images.items():
+        expected = np.empty((base["height"], base["width"], 3), dtype=np.float32)
+        expected[:] = [spp, spp + .1, spp + .2]
+        assert image.dtype == np.float32
+        np.testing.assert_array_equal(image, expected)
+
+
 @pytest.fixture
 def source_dataset(tmp_path, make_frame):
     source_plan, plan = fixture_plan(tmp_path)

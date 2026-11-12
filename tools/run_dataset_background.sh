@@ -12,6 +12,9 @@ elif [[ "${1:-}" == "reports" ]]; then
 elif [[ "${1:-}" == "train" ]]; then
     entry="$here/train_dataset.py"
     shift
+elif [[ "${1:-}" == "distributed" ]]; then
+    entry="$here/../distributed/generate.py"
+    shift
 fi
 python_bin="${DATASET_PYTHON:-python3}"
 dataset_workspace="$(cd -- "$here/../.." && pwd)"

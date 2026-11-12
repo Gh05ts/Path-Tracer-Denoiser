@@ -154,3 +154,10 @@ animation, adaptive sample layers, zero-sample inputs, an adaptive sampling
 network and joint sampler/denoiser optimization remain future work. First-hit
 motion does not fully describe reflected or refracted appearance, and background
 history is invalidated by the current frame contract.
+
+## Distributed capture
+
+The [distributed clip generator](distributed/README.md) lets separate GPU
+machines resume the same locked v4 dataset through a shared R2 task queue.
+Each task covers an entire eight-frame clip, including its required layers and
+decoded cache. Existing local progress and archived scenes are reused.

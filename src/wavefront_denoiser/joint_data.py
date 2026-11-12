@@ -23,6 +23,8 @@ class JointPatchDataset(torch.utils.data.Dataset):
             raise ValueError("Validation supports one to five fixed crops")
         self.sequences = V5SequenceDataset(root,partition=partition,length=length,tensors=False,sequence_ids=sequence_ids)
         descriptor = read_v5_dataset(root)
+        self.storage = descriptor.get("storage")
+        self.descriptor = descriptor
         for group in (descriptor["partitions"][partition] if sequence_ids is None else sequence_ids):
             config = descriptor["groups"][group]["source_config"]
             if patch_size > min(config["width"],config["height"]):
@@ -34,7 +36,7 @@ class JointPatchDataset(torch.utils.data.Dataset):
 
     def __getitem__(self,index):
         group,start,length = self.sequences.windows[index//self.patches_per_window]
-        config = read_v5_dataset(self.sequences.root)["groups"][group]["source_config"]
+        config = self.descriptor["groups"][group]["source_config"]
         h,w,size = config["height"],config["width"],self.patch_size
         if self.augment:
             top,left = int(torch.randint(h-size+1,(1,))),int(torch.randint(w-size+1,(1,)))
@@ -43,6 +45,13 @@ class JointPatchDataset(torch.utils.data.Dataset):
             top,left = origins[index%self.patches_per_window]
         values,layers = [],[]
         for frame_index in range(start,start+length):
+            if self.storage == "decoded":
+                from .decoded_cache import load_decoded_crop
+                frame, layer = load_decoded_crop(self.sequences.root, group, frame_index,
+                                                 top=top, left=left, size=size)
+                values.append(frame.as_tensors())
+                layers.append(torch.from_numpy(layer).permute(0,3,1,2).contiguous())
+                continue
             # Release each decoded full frame before decoding the next. Only
             # cropped copies survive into a five-frame training batch.
             frame = load_v5_frame(self.sequences.root,group,frame_index)
@@ -66,7 +75,12 @@ def joint_inventory(root, selections=None):
     """Verify train/validation bytes and freeze metadata; never open test images."""
     root = Path(root)
     descriptor = read_v5_dataset(root)
-    result = {"dataset_manifest_sha256":digest(root/"dataset.json"),"test_pixels_loaded":False,
+    decoded = descriptor.get("storage") == "decoded"
+    dataset_manifest = "decoded_cache_lock.json" if decoded else "dataset.json"
+    base_root = root if decoded else root/"base"
+    layer_root = root/"sample_layers" if decoded else root/"layers"
+    record_root = root/"decoded" if decoded else root/"frames"
+    result = {"dataset_manifest_sha256":digest(root/dataset_manifest),"test_pixels_loaded":False,
               "partitions":descriptor["partitions"],"reference_status":descriptor["reference_status"]}
     selections = selections or {p:descriptor["partitions"][p] for p in ("train","validation")}
     if set(selections) != {"train","validation"}:
@@ -93,16 +107,16 @@ def joint_inventory(root, selections=None):
                     raise ValueError("Scene identity crosses joint train/validation partitions")
                 seen_scene[scene] = partition
                 relative = Path(group)/f"frame_{index:06d}"
-                layer = read_json(root/"layers"/relative/"manifest.json")
+                layer = read_json(layer_root/relative/"manifest.json")
                 for image_sha in (base["image_sha256"],layer["image_sha256"]):
                     if image_sha in seen_images and seen_images[image_sha] != partition:
                         raise ValueError("Image content crosses joint train/validation partitions")
                     seen_images[image_sha] = partition
                 records.append({"sequence_id":group,"frame_index":index,"scene_fingerprint":scene,
-                    "completion_sha256":digest(root/"frames"/relative/"manifest.json"),
-                    "source_manifest_sha256":digest(root/"base"/relative/"manifest.json"),
+                    "completion_sha256":digest(record_root/relative/"manifest.json"),
+                    "source_manifest_sha256":digest(base_root/relative/"manifest.json"),
                     "source_image_sha256":base["image_sha256"],
-                    "layer_manifest_sha256":digest(root/"layers"/relative/"manifest.json"),
+                    "layer_manifest_sha256":digest(layer_root/relative/"manifest.json"),
                     "layer_image_sha256":layer["image_sha256"]})
         result[partition] = records
     # Known reserved scene identities can be audited from JSON alone. Never
@@ -110,7 +124,7 @@ def joint_inventory(root, selections=None):
     reserved = []
     for group in descriptor["partitions"]["test"]:
         for index in range(descriptor["groups"][group]["frame_count"]):
-            path = root/"base"/group/f"frame_{index:06d}"/"manifest.json"
+            path = base_root/group/f"frame_{index:06d}"/"manifest.json"
             if not path.exists():
                 continue
             metadata = read_manifest(path)

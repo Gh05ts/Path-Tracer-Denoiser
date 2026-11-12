@@ -212,19 +212,28 @@ def load_frame(path: str | Path, *, verify_digest: bool = True) -> Frame:
                      window.max.y == height - 1, "EXR data window disagrees with manifest")
             _require(display.min.x == 0 and display.min.y == 0 and display.max.x == width - 1 and
                      display.max.y == height - 1, "Unsupported EXR display window")
-            buffers = {}
             for name, channels in CHANNELS.items():
                 kind = Imath.PixelType.UINT if name in COUNT_BUFFERS else Imath.PixelType.FLOAT
-                dtype = np.uint32 if name in COUNT_BUFFERS else np.float32
-                planes = []
                 for channel in channels:
                     info = header["channels"].get(channel)
                     _require(info is not None, f"Missing EXR channel {channel}")
                     _require(info.type.v == kind and info.xSampling == 1 and info.ySampling == 1,
                              f"Unsupported precision or subsampling for {channel}")
-                    planes.append(np.frombuffer(source.channel(channel, Imath.PixelType(kind)), dtype=dtype)
-                                  .reshape(height, width))
-                buffers[name] = np.stack(planes, axis=-1)
+            buffers = {}
+            # Batch by pixel type so ZIP blocks are not decoded once per channel.
+            # Keep counts as UINT to preserve integers above float32's exact range.
+            for counts in (False, True):
+                names = [name for name in CHANNELS if (name in COUNT_BUFFERS) == counts]
+                channels = [channel for name in names for channel in CHANNELS[name]]
+                kind = Imath.PixelType.UINT if counts else Imath.PixelType.FLOAT
+                dtype = np.uint32 if counts else np.float32
+                planes = dict(zip(channels, source.channels(channels, Imath.PixelType(kind))))
+                for name in names:
+                    buffers[name] = np.stack([
+                        np.frombuffer(planes[channel], dtype=dtype).reshape(height, width)
+                        for channel in CHANNELS[name]
+                    ], axis=-1)
+                del planes
         finally:
             source.close()
         _validate_buffers(metadata, buffers)

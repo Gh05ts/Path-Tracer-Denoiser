@@ -21,6 +21,13 @@ to existing plans without overwriting an edited configuration. The older
 template is available at [`../configs/train-adaptive.json`](../configs/train-adaptive.json).
 Relative data paths resolve against the configuration file.
 
+The inline production dataset also provides `train-joint-decoded.json` with
+`data_root` set to that dataset directory. Once its selected caches and backfill
+are complete, the same `train-adaptive` command accepts this configuration.
+It needs `decoded/` arrays, source/companion manifests, `capture_lock.json`,
+`sample_layers_lock.json` and `decoded_cache_lock.json`, but no EXR payloads.
+The original train/validation/test assignments and provenance checks are retained.
+
 For a pilot, set `train_groups` and `validation_groups` to explicit completed
 group IDs in their registered partitions. Null selects the entire partition.
 Use smaller widths/crops for a technical check, and record those differences.
@@ -53,12 +60,14 @@ identity is checked from metadata when available; test EXRs are never decoded
 or hashed for model selection. A shared dataset lock allows concurrent readers
 and rejects a capture writer.
 
-`JointPatchDataset` decodes one full frame at a time, copies the crop, then
-releases the full frame before decoding the next. It applies the same crop,
-flip and rotation to guides, all six RGB layers and references, including the
-existing motion/normal transforms. Validation uses fixed center/corner crops
-without consuming augmentation RNG. Full-frame EXR decoding still limits I/O
-throughput; this is a correctness-first loader rather than a patch cache.
+For decoded inline data, `JointPatchDataset` memory maps float32/uint32 arrays
+and copies only the requested crop. Inventory verification hashes the arrays
+once; crop access checks metadata/headers without opening EXRs or hashing whole
+arrays. The legacy v5 path decodes one full frame at a time using batched EXR
+channel reads, copies the crop, then releases the full frame.
+Both paths apply the same crop, flip and rotation to guides, all six RGB layers
+and references, including existing motion/normal transforms. Validation uses
+fixed center/corner crops without consuming augmentation RNG.
 
 Each window starts with dense uniform replay. Four later frames run sampler ->
 allocation -> replay -> sparse denoiser, preserving gradients through history

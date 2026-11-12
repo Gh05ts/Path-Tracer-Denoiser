@@ -89,19 +89,21 @@ def read_layer_capture(directory: Path, base: dict, layout: list[dict], *, pixel
             window = header[name]
             if (window.min.x, window.min.y, window.max.x, window.max.y) != (0, 0, w-1, h-1):
                 raise FrameFormatError("Companion EXR windows disagree with source")
-        names = {channel for item in expected for channel in item["channels"]}
-        if set(header["channels"]) != names:
+        names = [channel for item in expected for channel in item["channels"]]
+        if set(header["channels"]) != set(names):
             raise FrameFormatError("Companion EXR has missing or unexpected channels")
+        for channel in names:
+            info = header["channels"][channel]
+            if info.type.v != Imath.PixelType.FLOAT or info.xSampling != 1 or info.ySampling != 1:
+                raise FrameFormatError("Companion RGB must be full-resolution FLOAT")
+        # Read every layer together to decompress shared ZIP blocks only once.
+        planes = dict(zip(names, source.channels(names, Imath.PixelType(Imath.PixelType.FLOAT))))
         values = {}
         for item in expected:
-            planes = []
-            for channel in item["channels"]:
-                info = header["channels"][channel]
-                if info.type.v != Imath.PixelType.FLOAT or info.xSampling != 1 or info.ySampling != 1:
-                    raise FrameFormatError("Companion RGB must be full-resolution FLOAT")
-                planes.append(np.frombuffer(source.channel(channel, Imath.PixelType(Imath.PixelType.FLOAT)),
-                                            dtype=np.float32).reshape(h, w))
-            image = np.stack(planes, axis=-1)
+            image = np.stack([
+                np.frombuffer(planes[channel], dtype=np.float32).reshape(h, w)
+                for channel in item["channels"]
+            ], axis=-1)
             if not np.isfinite(image).all() or (image < 0).any():
                 raise FrameFormatError("Companion RGB must be finite and nonnegative")
             values[item["samples"]] = image
@@ -111,7 +113,12 @@ def read_layer_capture(directory: Path, base: dict, layout: list[dict], *, pixel
 
 
 def read_v5_dataset(root: str | Path) -> dict:
-    value = read_json(Path(root) / "dataset.json")
+    root = Path(root)
+    if not (root / "dataset.json").exists() and (root / "decoded_cache_lock.json").exists():
+        from .decoded_cache import decoded_dataset_descriptor
+        value = decoded_dataset_descriptor(root)
+    else:
+        value = read_json(root / "dataset.json")
     if value.get("format") != "wavefront-ntasad-v5-dataset" or value.get("version") != 1:
         raise FrameFormatError("Unsupported v5 dataset")
     if set(value.get("partitions", {})) != {"train", "validation", "test"}:
@@ -146,6 +153,10 @@ def verify_v5_record(root: Path, group: str, index: int, *, verify_images=True) 
     dataset = read_v5_dataset(root)
     if group not in dataset["groups"] or type(index) is not int or not 0 <= index < dataset["groups"][group]["frame_count"]:
         raise FrameFormatError("Unknown v5 frame")
+    if dataset.get("storage") == "decoded":
+        from .decoded_cache import verify_decoded_frame
+        base, _ = verify_decoded_frame(root, group, index, verify_hashes=verify_images)
+        return dataset, base
     relative = Path(group) / f"frame_{index:06d}"
     record = read_json(root / "frames" / relative / "manifest.json")
     if (record.get("format") != "wavefront-ntasad-v5-frame" or record.get("version") != 1
@@ -176,6 +187,10 @@ class AdaptiveFrame:
 def load_v5_frame(root: str | Path, group: str, index: int) -> AdaptiveFrame:
     root = Path(root)
     dataset, _ = verify_v5_record(root, group, index)
+    if dataset.get("storage") == "decoded":
+        from .decoded_cache import load_decoded_crop
+        base, layers = load_decoded_crop(root, group, index)
+        return AdaptiveFrame(base, layers)
     relative = Path(group) / f"frame_{index:06d}"
     base = load_frame(root / "base" / relative)
     _, images = read_layer_capture(root / "layers" / relative, base.metadata,

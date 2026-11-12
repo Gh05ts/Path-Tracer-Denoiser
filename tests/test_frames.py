@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from wavefront_denoiser import FrameFormatError, load_frame
+from wavefront_denoiser.image_io import load_input
 
 
 def test_hdr_channels_and_layout(make_frame):
@@ -16,6 +17,31 @@ def test_hdr_channels_and_layout(make_frame):
     assert frame.buffers["radiance"][-1, -1, 1] == 2
     assert frame.buffers["normal"][0, 0, 2] == -1
     assert frame.buffers["sample_count"].dtype == np.uint32
+
+
+@pytest.mark.parametrize("reader", [load_frame, load_input])
+def test_channel_reads_preserve_rgb_order_and_exact_uint_counts(make_frame, reader):
+    count = 2**24 + 1
+
+    def pixels(channels):
+        for name, value in zip(("radiance.R", "radiance.G", "radiance.B"), (32, 4, .125)):
+            channels[name].fill(value)
+        channels["radiance.G"][-1, -1] = 2
+        channels["sample_count.N"].fill(count)
+        channels["reference_count.N"].fill(count + 2)
+
+    def metadata(value):
+        value["render"].update(samples=count, reference_sample_start=count, reference_samples=count + 2)
+
+    frame = reader(make_frame(mutate=pixels, metadata_mutate=metadata))
+    np.testing.assert_array_equal(frame.buffers["radiance"][0, 0], [32, 4, .125])
+    np.testing.assert_array_equal(frame.buffers["radiance"][-1, -1], [32, 2, .125])
+    assert frame.buffers["radiance"].dtype == np.float32
+    assert frame.buffers["sample_count"].dtype == np.uint32
+    assert (frame.buffers["sample_count"] == count).all()
+    if "reference_count" in frame.buffers:
+        assert frame.buffers["reference_count"].dtype == np.uint32
+        assert (frame.buffers["reference_count"] == count + 2).all()
 
 
 def test_checksum_rejects_replaced_image(make_frame):

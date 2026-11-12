@@ -423,13 +423,15 @@ def run_captures(configs: dict, groups: list[str], output: Path, executable: Pat
                  *, first_frame: int = 0, end_frame: int | None = None,
                  skip_missing_rendered: bool = False,
                  scene_archiver: B2SceneArchiver | R2SceneArchiver | None = None,
-                 sample_layer_capture=None) -> dict:
+                 sample_layer_capture=None, decoded_cache=None) -> dict:
     skip_missing_rendered = skip_missing_rendered or scene_archiver is not None
     captured, skipped, archived = 0, 0, 0
     records = []
     archived_scenes = []
     last_scene_group = {configs[group]["scene"]: group for group in groups}
     for ordinal, group in enumerate(groups, 1):
+        if decoded_cache is not None:
+            decoded_cache.check()
         config = configs[group]
         directory = output / group
         missing = []
@@ -478,11 +480,19 @@ def run_captures(configs: dict, groups: list[str], output: Path, executable: Pat
             print(f"  Completed {end-first} frames in {time.monotonic()-before:.1f}s; log: {log_path}", flush=True)
         if sample_layer_capture is not None:
             sample_layer_capture.capture_group(group, first_frame=first_frame, end_frame=stop)
+        if decoded_cache is not None:
+            if first_frame != 0 or stop != len(config["frames"]):
+                raise ValueError("Background decoding requires complete clips")
+            decoded_cache.submit_group(group)
         scene = config["scene"]
         if scene_archiver is not None and group == last_scene_group[scene]:
+            if decoded_cache is not None:
+                decoded_cache.finish_scene(scene)
             scene_configs = {g: c for g, c in configs.items() if c["scene"] == scene}
             if scene_archiver.archive_scene(scene, scene_configs):
                 archived_scenes.append(scene)
+    if decoded_cache is not None:
+        decoded_cache.close()
     result = {"captured_frames": captured, "skipped_frames": skipped, "groups": groups,
               "frame_range": [first_frame, end_frame],
               "new_frames": records, "reference_status": "fixed_budget_not_convergence_qualified"}
@@ -548,6 +558,9 @@ def main(argv=None, *, reports=False) -> int:
                         help="Layer-capable renderer; kept separate from the locked base renderer")
     parser.add_argument("--sample-layers-after-group",
                         help="Add layers only to clips after this group in the full plan")
+    parser.add_argument("--decode-after-group",
+                        help="Decode complete clips after this boundary on a background CPU worker; "
+                             "upload verified EXRs and crop-addressable arrays together per scene")
     parser.add_argument("--skip-missing-rendered", action="store_true",
                         help="Trust retained manifests/capture logs and skip missing rendered EXRs; "
                              "does not check remote storage and omits the final local split audit")
@@ -564,6 +577,8 @@ def main(argv=None, *, reports=False) -> int:
                         help="Capture only [START,END) per clip, preserving the full plan for later resume")
     parser.add_argument("--partitions", nargs="+", choices=PARTITIONS, default=["validation", "test"] if reports else list(PARTITIONS))
     args = parser.parse_args(argv)
+    if args.decode_after_group and (args.stage != "capture" or reports or args.frame_range):
+        parser.error("Background decoding requires full clips in the normal capture stage")
     if any((args.sample_layer_spp, args.sample_layer_renderer, args.sample_layers_after_group)):
         if args.stage != "capture" or reports:
             parser.error("Inline sample layers require the normal capture stage")
@@ -601,6 +616,8 @@ def main(argv=None, *, reports=False) -> int:
         suffix += "-"+args.stage
     output = (args.output or DEFAULT_DATASET_ROOT / (plan["dataset_id"]+suffix)).resolve()
     executable = args.renderer.resolve() if args.stage != "plan" else None
+    if args.stage == "capture" and (output / "distributed/active.json").exists():
+        parser.error("This dataset is managed by distributed clip workers; use distributed/generate.py worker")
     if executable and not executable.is_file():
         parser.error(f"Build dataset_capture and pass --renderer: {executable}")
     with capture_lock(output), terminate_subprocesses_on_sigterm():
@@ -617,6 +634,14 @@ def main(argv=None, *, reports=False) -> int:
             layer_capture = InlineSampleLayers(output, configs, args.sample_layer_renderer,
                 args.renderer_root, spps=args.sample_layer_spp, after_group=args.sample_layers_after_group,
                 reserved_reference_samples=plan["report_reference_samples"])
+        decoded_cache = None
+        saved_decoded = output / "decoded_cache_lock.json"
+        if args.decode_after_group or (saved_decoded.exists() and args.stage == "capture" and not reports):
+            from .decoded_cache import BackgroundDecodedCache
+            if args.frame_range or layer_capture is None:
+                parser.error("Background decoding requires full clips and inline sample layers")
+            boundary = args.decode_after_group or json.loads(saved_decoded.read_text())["after_group"]
+            decoded_cache = BackgroundDecodedCache(output, configs, after_group=boundary)
         scene_archiver = B2SceneArchiver(output, args.b2_archive, rclone=args.rclone) if args.b2_archive else None
         if args.r2_archive:
             scene_archiver = R2SceneArchiver(output, args.r2_archive)
@@ -627,10 +652,14 @@ def main(argv=None, *, reports=False) -> int:
                           "dimensions": [next(iter(configs.values()))["width"], next(iter(configs.values()))["height"]],
                           "reference_samples": spec["declared_reference_samples"]}, indent=2), flush=True)
         if args.stage != "plan":
-            extra = {"sample_layer_capture": layer_capture} if layer_capture is not None else {}
-            result = run_captures(configs, groups, output, executable, args.renderer_root.resolve(),
-                                  first_frame=first, end_frame=end,
-                                  skip_missing_rendered=skip_missing_rendered, scene_archiver=scene_archiver, **extra)
+            try:
+                result = run_captures(configs, groups, output, executable, args.renderer_root.resolve(),
+                                      first_frame=first, end_frame=end,
+                                      skip_missing_rendered=skip_missing_rendered, scene_archiver=scene_archiver,
+                                      sample_layer_capture=layer_capture, decoded_cache=decoded_cache)
+            finally:
+                if decoded_cache is not None:
+                    decoded_cache.close()
             print(json.dumps({k: v for k, v in result.items() if k != "new_frames"}, indent=2), flush=True)
             if preview or args.stage == "pilot":
                 contact_sheet(output, configs, groups, first_frame=first, end_frame=end)

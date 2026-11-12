@@ -122,10 +122,59 @@ then removes only verified local EXRs. The persistent base renderer is
 `../../dataset/bin/dataset_capture-base-integrator12`; its bytes match the
 original capture lock and support the existing layer-only export mode.
 
-This inline layout is separate from v5's `base/`, `layers/`, `frames/` layout.
-It stores the same companion format and sample intervals. V5's current loader
-still expects its own indexed layout; these files are retained for reuse or
-later backfill/import, rather than silently duplicating the original captures.
+The inline layout is separate from v5's `base/`, `layers/`, `frames/` layout.
+The joint trainer also accepts the decoded inline layout below, so it can train
+from cached arrays and metadata without downloading the original EXRs.
+
+### Background decoded caches
+
+Generation was stopped during `bistro_view_05_forward_dolly_slow` after seven
+completed frames. Its entire eight-frame clip is included in decoded backfill.
+The prepared resume script adds
+`--decode-after-group bistro_view_05_forward_dolly_slow`; automatic decoding
+starts with `bistro_view_05_forward_wave_medium`. Generation remains stopped.
+
+For separate machines with their own local disks, the
+[distributed generator](../distributed/README.md) coordinates whole clips in
+R2 and uploads each finished clip after decoding. It reuses the same v4 locks,
+partial progress and backfill boundaries; initialize its shared queue before
+starting distributed workers. The sequential and distributed generators must
+not run against the same active dataset concurrently.
+
+After a complete base clip and its five additional SPP layers are verified,
+the generator queues the clip on one spawned CPU process with two OpenEXR
+decoder threads. GPU rendering proceeds to the next clip. At most two clips
+may be queued/running; decoder failures propagate to the capture process.
+At scene completion the generator waits for decoding before the scene upload.
+
+Each `decoded/GROUP/frame_NNNNNN/` contains `float.npy`, `uint.npy` and
+`manifest.json`. The arrays preserve all 37 source channels, with float32 HDR
+values and uint32 counts. They have HWC layout and can be memory mapped for
+crop access. The existing 4-SPP RGB is stored once and reused as the sixth layer.
+Each frame is staged, compared against decoded source values, hashed and
+atomically published. Interrupted unpublished caches are retained under
+`recovery.partial/decoded/`; changed published files are rejected.
+
+`decoded_cache_lock.json` binds the source capture/layer locks, channel layout
+and enablement boundary. Resume reloads it automatically. Required decoded
+arrays, source EXRs, manifests, locks, training config and backfill documents
+are uploaded in the same scene upload phase. Local EXRs and arrays are removed
+only after all files and the archive receipt are remotely verified. A failed
+upload/verification retains the local payloads for retry.
+
+`DECODED_BACKFILL.md` lists 352 frames in 44 clips requiring decoded backfill,
+including the stopped clip. This is separate from the 304 frames missing
+additional SPP layers in `SAMPLE_LAYERS_BACKFILL.md`. Existing archived EXRs
+must be retrieved for backfill; original integrator provenance and sample
+ranges are retained. These backfills are not run by enabling future decoding.
+
+For joint training, `train-joint-decoded.json` points at the inline dataset.
+Download decoded arrays and all metadata (including the base and companion
+manifests and both source locks). The trainer verifies array hashes at inventory
+time, then reads only crops through read-only memory maps. No EXR decoding or
+full-array hashing occurs per crop. All selected clips need complete caches;
+backfill must finish before a full production training run. The legacy v5 EXR
+loader remains supported. Validation scheduling is unchanged.
 
 | Partition | Scenes | Clips | Frames |
 | --- | --- | ---: | ---: |

@@ -63,18 +63,26 @@ def load_input(path: str | Path, *, temporal: bool = False) -> FrameInput:
             if not all(reference_present):
                 raise FrameFormatError("Incomplete reference RGB channels")
             names.append("reference")
-        buffers = {}
         for name in names:
             kind = Imath.PixelType.UINT if name == "sample_count" else Imath.PixelType.FLOAT
-            dtype = np.uint32 if name == "sample_count" else np.float32
-            planes = []
             for channel in CHANNELS[name]:
                 info = header["channels"].get(channel)
                 if info is None or info.type.v != kind or info.xSampling != 1 or info.ySampling != 1:
                     raise FrameFormatError(f"Missing channel or unsupported precision: {channel}")
-                planes.append(np.frombuffer(source.channel(channel, Imath.PixelType(kind)), dtype=dtype)
-                              .reshape(height, width))
-            buffers[name] = np.stack(planes, axis=-1)
+        buffers = {}
+        # Decode channels together while retaining the native integer count type.
+        for counts in (False, True):
+            selected = [name for name in names if (name == "sample_count") == counts]
+            channels = [channel for name in selected for channel in CHANNELS[name]]
+            kind = Imath.PixelType.UINT if counts else Imath.PixelType.FLOAT
+            dtype = np.uint32 if counts else np.float32
+            planes = dict(zip(channels, source.channels(channels, Imath.PixelType(kind))))
+            for name in selected:
+                buffers[name] = np.stack([
+                    np.frombuffer(planes[channel], dtype=dtype).reshape(height, width)
+                    for channel in CHANNELS[name]
+                ], axis=-1)
+            del planes
         if metadata and not (buffers["sample_count"] == metadata["render"]["samples"]).all():
             raise FrameFormatError("Sample counts disagree with manifest")
         return FrameInput(path, buffers, digest)

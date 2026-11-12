@@ -1,4 +1,4 @@
-"""Archive completed scenes to B2 after hash verification, then remove local EXRs."""
+"""Archive completed scenes after verification, then remove local payloads."""
 from __future__ import annotations
 
 import hashlib
@@ -101,7 +101,7 @@ class B2SceneArchiver:
     def archive_scene(self, scene: str, configs: dict[str, dict]) -> bool:
         """Archive only a complete planned scene, retaining manifests and logs.
 
-        A verified receipt is written before removing any EXR. If interrupted
+        A verified receipt is written before removing any EXR or decoded array. If interrupted
         during deletion, the receipt supplies hashes for already-removed files
         while the remaining local files are uploaded/checked again on resume.
         """
@@ -144,6 +144,21 @@ class B2SceneArchiver:
             images.append(image)
             manifests.append(manifest)
 
+        from .decoded_cache import required_decoded_pairs, verify_decoded_frame
+        decoded_pairs = required_decoded_pairs(self.output, configs)
+        checked_caches = set()
+        for image, manifest in decoded_pairs:
+            if not manifest.is_file() or (not image.is_file() and str(image.relative_to(self.output)) not in previous):
+                print(f"Scene {scene} decoded caches are incomplete; keeping local files.", flush=True)
+                return False
+            if manifest not in checked_caches:
+                verify_decoded_frame(self.output, manifest.parent.parent.name,
+                                     int(manifest.parent.name.removeprefix("frame_")),
+                                     verify_hashes=False, allow_missing=True)
+                checked_caches.add(manifest)
+            images.append(image)
+            manifests.append(manifest)
+
         if previous and all(not image.exists() for image in images):
             print(f"Scene {scene} already archived to {self.destination}; skipping.", flush=True)
             return True
@@ -153,7 +168,9 @@ class B2SceneArchiver:
         sidecars = [self.output / name for name in (
             "capture_lock.json", "split.json", "train.json", "reference-check-plan.json",
             "reference_policy.json", "reference_convergence.json", "sample_layers_lock.json",
-            "SAMPLE_LAYERS_BACKFILL.md") if (self.output / name).is_file()]
+            "SAMPLE_LAYERS_BACKFILL.md", "decoded_cache_lock.json", "DECODED_BACKFILL.md",
+            "train-joint-decoded.json")
+            if (self.output / name).is_file()]
         sidecars.extend(sorted((self.output / "capture_configs").glob("*.json")))
         sidecars.extend(sorted((self.output / "sample_layer_configs").glob("*.json")))
         sidecars.extend(sorted(p for p in (self.output / "capture-history").rglob("*") if p.is_file()))
@@ -162,7 +179,7 @@ class B2SceneArchiver:
         sidecars.extend(self.output / "logs" / f"layers-{group}.log" for group in configs
                         if (self.output / "logs" / f"layers-{group}.log").is_file())
         inventory, available, stamps = {}, [], {}
-        for path in [*images, *manifests, *sidecars]:
+        for path in dict.fromkeys([*images, *manifests, *sidecars]):
             relative = path.relative_to(self.output).as_posix()
             if path.is_file():
                 before = path.stat()
@@ -176,7 +193,9 @@ class B2SceneArchiver:
             else:
                 inventory[relative] = previous[relative]
         for image, manifest in zip(images, manifests):
-            if image.name == "layers.exr":
+            if image.suffix == ".npy":
+                metadata = {"image_sha256": json.loads(manifest.read_text())["arrays"][image.name]["sha256"]}
+            elif image.name == "layers.exr":
                 from .adaptive_data import read_layer_capture
                 group = manifest.parent.parent.name
                 base = read_manifest(self.output/group/manifest.parent.name)
@@ -186,7 +205,8 @@ class B2SceneArchiver:
             else:
                 metadata = read_manifest(manifest)
             if inventory[image.relative_to(self.output).as_posix()]["sha256"] != metadata["image_sha256"]:
-                raise ValueError(f"Local EXR checksum mismatch before {self.provider.upper()} upload: {image}")
+                kind = "decoded array" if image.suffix == ".npy" else "EXR"
+                raise ValueError(f"Local {kind} checksum mismatch before {self.provider.upper()} upload: {image}")
 
         if self.native is not None:
             self.native.upload_files(self.output, available, inventory)
@@ -214,10 +234,11 @@ class B2SceneArchiver:
         for image in local_images:
             stat = image.stat()
             if (stat.st_size, stat.st_mtime_ns, stat.st_ino) != stamps[image]:
-                raise ValueError(f"Local EXR changed during upload; keeping local files: {image}")
+                kind = "decoded array" if image.suffix == ".npy" else "EXR"
+                raise ValueError(f"Local {kind} changed during upload; keeping local files: {image}")
         for image in local_images:
             image.unlink()
         removed = sum(inventory[image.relative_to(self.output).as_posix()]["size"] for image in local_images)
-        print(f"Archived scene {scene}: removed {len(local_images)} verified local EXRs "
+        print(f"Archived scene {scene}: removed {len(local_images)} verified local payloads (EXRs/decoded arrays) "
               f"({removed / 1e9:.2f} GB); kept manifests, logs and receipt.", flush=True)
         return True
