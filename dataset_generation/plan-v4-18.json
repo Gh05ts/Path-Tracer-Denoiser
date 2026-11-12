@@ -1,0 +1,1591 @@
+{
+  "format": "wavefront-denoiser-capture-plan",
+  "version": 1,
+  "dataset_id": "denoiser-v4",
+  "width": 1920,
+  "height": 1080,
+  "frames_per_clip": 8,
+  "samples": 4,
+  "reference_samples": 1024,
+  "report_reference_samples": 4096,
+  "sample_start": 700000000,
+  "sample_stride": 8192,
+  "clip_sample_stride": 1000000,
+  "max_depth": 12,
+  "russian_roulette_start_depth": 5,
+  "tile_width": 256,
+  "tile_height": 256,
+  "caustics": false,
+  "indirect_radiance_clamp": 10.0,
+  "motions": [
+    "linear",
+    "dolly",
+    "wave",
+    "circle",
+    "orbit",
+    "pan_tilt"
+  ],
+  "scenes": [
+    {
+      "id": "bmw",
+      "partition": "train",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/bmw.json",
+      "camera": {
+        "position": [
+          -11.0,
+          0.8,
+          5.000000000000001
+        ],
+        "target": [
+          -10.132729007267523,
+          0.6747275232719757,
+          4.518182781815292
+        ],
+        "up": [
+          0.1095078470295685,
+          0.9921223747978001,
+          -0.06083769279420473
+        ],
+        "vertical_fov_degrees": 29.999999999999996
+      },
+      "focus_distance": 12,
+      "motion_scale": 0.3,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.65,
+            0.12,
+            0.6
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "offset": [
+            -0.65,
+            0.25,
+            1.0
+          ],
+          "yaw_degrees": -6
+        },
+        {
+          "name": "view_03",
+          "camera": {
+            "position": [
+              -12.2816392389354,
+              0.8,
+              -3.0423383675709887
+            ],
+            "target": [
+              -0.5927480872102784,
+              -0.7032697207362912,
+              -0.7818066182165033
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "vertical_fov_degrees": 40.0
+          }
+        },
+        {
+          "name": "view_04",
+          "camera": {
+            "position": [
+              -5.801561731254984,
+              0.8,
+              9.923726557124706
+            ],
+            "target": [
+              -0.5927480872102784,
+              -0.7032697207362912,
+              -0.7818066182165033
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "vertical_fov_degrees": 40.0
+          }
+        },
+        {
+          "name": "view_05",
+          "camera": {
+            "position": [
+              5.189058531006225,
+              0.8,
+              9.625445294573218
+            ],
+            "target": [
+              -0.5927480872102784,
+              -0.7032697207362912,
+              -0.7818066182165033
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "vertical_fov_degrees": 40.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "bistro",
+      "partition": "train",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/bistro.json",
+      "camera": {
+        "position": [
+          -26.43077278137207,
+          3.156161069869995,
+          11.170342445373535
+        ],
+        "target": [
+          -25.473019623721342,
+          3.1242214810425937,
+          11.456154942455283
+        ],
+        "up": [
+          0.0203399820747992,
+          0.9988479865031596,
+          0.04346245524913134
+        ],
+        "vertical_fov_degrees": 35.98339890412515
+      },
+      "focus_distance": 12,
+      "motion_scale": 0.4,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            -1.0,
+            0,
+            1.0
+          ],
+          "yaw_degrees": 0,
+          "motion_speeds": [
+            [
+              "linear",
+              "slow"
+            ],
+            [
+              "dolly",
+              "medium"
+            ],
+            [
+              "wave",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_04_forward",
+          "camera": {
+            "position": [
+              -17.692577244838905,
+              3.155942172338989,
+              11.477488119808097
+            ],
+            "target": [
+              -5.826872727118785,
+              2.772667112506642,
+              9.72872955251903
+            ],
+            "up": [
+              0.03826765480758811,
+              0.9984331061671607,
+              0.04082792065391823
+            ],
+            "vertical_fov_degrees": 35.98339890412515
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "medium"
+            ],
+            [
+              "orbit",
+              "fast"
+            ],
+            [
+              "pan_tilt",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_05_forward",
+          "camera": {
+            "position": [
+              -21.29396078913953,
+              3.080250374412097,
+              12.96985546858277
+            ],
+            "target": [
+              -13.05557312170839,
+              2.69697531457975,
+              21.686624874138303
+            ],
+            "up": [
+              0.010982002985235524,
+              0.9993762616876836,
+              0.03356312240514894
+            ],
+            "vertical_fov_degrees": 35.98339890412515
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "fast"
+            ],
+            [
+              "dolly",
+              "slow"
+            ],
+            [
+              "wave",
+              "medium"
+            ]
+          ]
+        },
+        {
+          "name": "view_03_left",
+          "camera": {
+            "position": [
+              -20.11669384877037,
+              3.1586768782508097,
+              8.157600600589745
+            ],
+            "target": [
+              -9.902956499892523,
+              2.775401818418463,
+              14.445101661953336
+            ],
+            "up": [
+              0.013376366922046886,
+              0.9991427604424603,
+              0.03917674135743442
+            ],
+            "vertical_fov_degrees": 35.98339890412515
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "slow"
+            ],
+            [
+              "orbit",
+              "medium"
+            ],
+            [
+              "pan_tilt",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_02_forward",
+          "camera": {
+            "position": [
+              -23.453021915313723,
+              3.3197040553213575,
+              10.661320251999417
+            ],
+            "target": [
+              -12.381450756951688,
+              2.9364289954890106,
+              15.273631203554658
+            ],
+            "up": [
+              0.017047497943959142,
+              0.9989683305417393,
+              0.04209106067208431
+            ],
+            "vertical_fov_degrees": 35.98339890412515
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "medium"
+            ],
+            [
+              "dolly",
+              "fast"
+            ],
+            [
+              "wave",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_01_forward",
+          "camera": {
+            "position": [
+              -24.03753974993436,
+              3.203944786303988,
+              11.207575204415127
+            ],
+            "target": [
+              -12.248955616513815,
+              2.820669726471641,
+              13.417187015972953
+            ],
+            "up": [
+              0.02418936786521985,
+              0.9987305063466787,
+              0.044184275198175346
+            ],
+            "vertical_fov_degrees": 35.98339890412515
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "fast"
+            ],
+            [
+              "orbit",
+              "slow"
+            ],
+            [
+              "pan_tilt",
+              "medium"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "living_room",
+      "partition": "train",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/living_room.json",
+      "camera": {
+        "position": [
+          5.105184435355126,
+          0.7310657523726809,
+          -2.317890597614662
+        ],
+        "target": [
+          4.143392671738068,
+          0.8054727536766069,
+          -2.054414186614074
+        ],
+        "up": [
+          0.07176296719264168,
+          0.9972279140316747,
+          -0.019658982215561865
+        ],
+        "vertical_fov_degrees": 58.715508
+      },
+      "focus_distance": 3,
+      "motion_scale": 0.08,
+      "anchors": [
+        {
+          "name": "view_04_right",
+          "camera": {
+            "position": [
+              3.491621766482284,
+              1.0331768196804467,
+              -3.0565090869439473
+            ],
+            "target": [
+              1.3880276794031579,
+              1.2563978662767354,
+              -0.9292892390762675
+            ],
+            "up": [
+              0.0787375114419747,
+              0.996537516520924,
+              -0.02670922047223119
+            ],
+            "vertical_fov_degrees": 58.715508
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "slow"
+            ],
+            [
+              "dolly",
+              "medium"
+            ],
+            [
+              "wave",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_05_right",
+          "camera": {
+            "position": [
+              3.8634315939617485,
+              0.9414429310698562,
+              -1.2658480011213735
+            ],
+            "target": [
+              1.2642447918105248,
+              1.164663977666145,
+              -2.747198848111834
+            ],
+            "up": [
+              0.09061368717639892,
+              0.9958460820992944,
+              -0.008929751608143272
+            ],
+            "vertical_fov_degrees": 58.715508
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "medium"
+            ],
+            [
+              "orbit",
+              "fast"
+            ],
+            [
+              "pan_tilt",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_02_left",
+          "camera": {
+            "position": [
+              4.655238903630509,
+              0.92281477836902,
+              -1.863744782557298
+            ],
+            "target": [
+              1.7030470829563822,
+              1.1460358249653086,
+              -1.3792493560554133
+            ],
+            "up": [
+              0.07216300666196833,
+              0.9971977933744273,
+              -0.019724638366213354
+            ],
+            "vertical_fov_degrees": 58.715508
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "fast"
+            ],
+            [
+              "dolly",
+              "slow"
+            ],
+            [
+              "wave",
+              "medium"
+            ]
+          ]
+        },
+        {
+          "name": "view_03_left",
+          "camera": {
+            "position": [
+              3.354614190570958,
+              0.9697386720256242,
+              -1.6878919887036592
+            ],
+            "target": [
+              0.4055257035420522,
+              1.192959718621913,
+              -2.1909322058136027
+            ],
+            "up": [
+              0.07859895121779738,
+              0.9967347626957618,
+              -0.018493720590670185
+            ],
+            "vertical_fov_degrees": 58.715508
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "slow"
+            ],
+            [
+              "orbit",
+              "medium"
+            ],
+            [
+              "pan_tilt",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_01_left",
+          "camera": {
+            "position": [
+              4.790108953999871,
+              0.8356454696207273,
+              -2.2324815249974193
+            ],
+            "target": [
+              2.0031618710189867,
+              1.058866516217016,
+              -1.1447782929433816
+            ],
+            "up": [
+              0.07214061749953153,
+              0.9971977933456111,
+              -0.019806369011770637
+            ],
+            "vertical_fov_degrees": 58.715508
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "medium"
+            ],
+            [
+              "dolly",
+              "fast"
+            ],
+            [
+              "wave",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_00_right",
+          "camera": {
+            "position": [
+              4.8705526282713825,
+              0.745947155777124,
+              -2.419509783486875
+            ],
+            "target": [
+              1.985176785676285,
+              0.9691682023734127,
+              -1.6290803993385585
+            ],
+            "up": [
+              0.07176299906853095,
+              0.9972279559055726,
+              -0.019658990947748124
+            ],
+            "vertical_fov_degrees": 58.715508
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "fast"
+            ],
+            [
+              "orbit",
+              "slow"
+            ],
+            [
+              "pan_tilt",
+              "medium"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "breakfast_room",
+      "partition": "train",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/breakfast_room.json",
+      "camera": {
+        "position": [
+          -0.5873181363670283,
+          2.762300154466933,
+          9.714294329048483
+        ],
+        "target": [
+          -0.5742601382704959,
+          2.6984370928925916,
+          8.716420850199437
+        ],
+        "up": [
+          0.0008356284501055143,
+          0.9979583462834424,
+          -0.06385752719273695
+        ],
+        "vertical_fov_degrees": 35.9834
+      },
+      "focus_distance": 8,
+      "motion_scale": 0.18,
+      "anchors": [
+        {
+          "name": "view_05_right",
+          "camera": {
+            "position": [
+              -2.3314614808753746,
+              2.6753431471826556,
+              5.983539729186356
+            ],
+            "target": [
+              4.267735810822405,
+              2.1644387776489924,
+              1.490258986739908
+            ],
+            "up": [
+              0.02326261604414048,
+              0.9965911656349092,
+              -0.07915111668975879
+            ],
+            "vertical_fov_degrees": 35.9834
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "slow"
+            ],
+            [
+              "dolly",
+              "medium"
+            ],
+            [
+              "wave",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_04_right",
+          "camera": {
+            "position": [
+              1.2802634615632036,
+              2.760606123334652,
+              6.580289396779571
+            ],
+            "target": [
+              -1.9988156662906478,
+              2.2497017538009887,
+              -0.698901272413306
+            ],
+            "up": [
+              -0.001611927183503087,
+              0.9975951147973842,
+              -0.06929205310242299
+            ],
+            "vertical_fov_degrees": 35.9834
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "medium"
+            ],
+            [
+              "orbit",
+              "fast"
+            ],
+            [
+              "pan_tilt",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_02_right",
+          "camera": {
+            "position": [
+              -0.5652423291700142,
+              2.894040814738767,
+              8.641440965111851
+            ],
+            "target": [
+              0.37309861518319254,
+              2.383136445205104,
+              0.7131061464162031
+            ],
+            "up": [
+              0.0008765800565387573,
+              0.9979364361979556,
+              -0.06420358958756457
+            ],
+            "vertical_fov_degrees": 35.9834
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "fast"
+            ],
+            [
+              "dolly",
+              "slow"
+            ],
+            [
+              "wave",
+              "medium"
+            ]
+          ]
+        },
+        {
+          "name": "view_03_forward",
+          "camera": {
+            "position": [
+              -1.9452891243299906,
+              2.586549051347353,
+              6.973471016804659
+            ],
+            "target": [
+              1.523143003642529,
+              2.0756446818136896,
+              -0.21742289833825798
+            ],
+            "up": [
+              0.0034245521570703164,
+              0.9975951147973842,
+              -0.06922614661323734
+            ],
+            "vertical_fov_degrees": 35.9834
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "slow"
+            ],
+            [
+              "orbit",
+              "medium"
+            ],
+            [
+              "pan_tilt",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_01_forward",
+          "camera": {
+            "position": [
+              -0.2498307033949649,
+              2.794912097088844,
+              8.663759154560127
+            ],
+            "target": [
+              -0.9803882575299079,
+              2.284007727555181,
+              0.7135854215346785
+            ],
+            "up": [
+              0.0008037463397716936,
+              0.9979364361979556,
+              -0.06420454267686404
+            ],
+            "vertical_fov_degrees": 35.9834
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "medium"
+            ],
+            [
+              "dolly",
+              "fast"
+            ],
+            [
+              "wave",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_00_right",
+          "camera": {
+            "position": [
+              -0.2208199579220536,
+              2.7303686313710793,
+              9.220068203647068
+            ],
+            "target": [
+              -0.11635599831193305,
+              2.219464261837416,
+              1.2370822957092382
+            ],
+            "up": [
+              0.000835629127749568,
+              0.9979586721558743,
+              -0.06385757897732325
+            ],
+            "vertical_fov_degrees": 35.9834
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "fast"
+            ],
+            [
+              "orbit",
+              "slow"
+            ],
+            [
+              "pan_tilt",
+              "medium"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dragon",
+      "partition": "train",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/dragon.json",
+      "camera": {
+        "position": [
+          0,
+          1.2,
+          6.5
+        ],
+        "target": [
+          0,
+          0.8,
+          -0.6
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "vertical_fov_degrees": 42
+      },
+      "focus_distance": 7.1,
+      "motion_scale": 0.18,
+      "anchors": [
+        {
+          "name": "view_04_right",
+          "camera": {
+            "position": [
+              2.2388821854962098,
+              1.7,
+              4.578513933501359
+            ],
+            "target": [
+              -0.12705638803934632,
+              0.5792922546410522,
+              -2.0212094558346667
+            ],
+            "up": [
+              -0.05326697014014848,
+              0.9874637154635713,
+              -0.14858681144357208
+            ],
+            "vertical_fov_degrees": 48.0
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "slow"
+            ],
+            [
+              "dolly",
+              "medium"
+            ],
+            [
+              "wave",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_03_left",
+          "camera": {
+            "position": [
+              -2.2395924607014606,
+              1.5,
+              4.680513763827264
+            ],
+            "target": [
+              0.09951851750594715,
+              0.6382222711867445,
+              -1.967485858446421
+            ],
+            "up": [
+              0.04028582833856998,
+              0.9926064621465698,
+              -0.11449656475172519
+            ],
+            "vertical_fov_degrees": 48.0
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "medium"
+            ],
+            [
+              "orbit",
+              "fast"
+            ],
+            [
+              "pan_tilt",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_01_left",
+          "camera": {
+            "position": [
+              0.24196586107922702,
+              1.3106735536110186,
+              6.331077972888255
+            ],
+            "target": [
+              -0.4990112389192365,
+              0.9113068411643244,
+              -0.7188482087300586
+            ],
+            "up": [
+              -3.2107180348826127e-05,
+              0.9983995234598145,
+              -0.056554314816326993
+            ],
+            "vertical_fov_degrees": 42
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "fast"
+            ],
+            [
+              "dolly",
+              "slow"
+            ],
+            [
+              "wave",
+              "medium"
+            ]
+          ]
+        },
+        {
+          "name": "view_02_right",
+          "camera": {
+            "position": [
+              -0.24196586107922702,
+              1.4292179686084,
+              6.124082268408842
+            ],
+            "target": [
+              0.4990112389192365,
+              1.0298512561617057,
+              -0.9258439132094712
+            ],
+            "up": [
+              3.2107180348826127e-05,
+              0.9983995234598145,
+              -0.056554314816326993
+            ],
+            "vertical_fov_degrees": 42
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "slow"
+            ],
+            [
+              "orbit",
+              "medium"
+            ],
+            [
+              "pan_tilt",
+              "fast"
+            ]
+          ]
+        },
+        {
+          "name": "view_05_forward",
+          "camera": {
+            "position": [
+              0.0,
+              2.525307397852142,
+              4.959323837523568
+            ],
+            "target": [
+              0.0,
+              0.42087297225772585,
+              -1.821631533836215
+            ],
+            "up": [
+              0.0,
+              0.9550641368112371,
+              -0.29639921487245297
+            ],
+            "vertical_fov_degrees": 48.0
+          },
+          "motion_speeds": [
+            [
+              "linear",
+              "medium"
+            ],
+            [
+              "dolly",
+              "fast"
+            ],
+            [
+              "wave",
+              "slow"
+            ]
+          ]
+        },
+        {
+          "name": "view_04_left",
+          "camera": {
+            "position": [
+              1.5611178145037898,
+              1.7,
+              4.821486066498641
+            ],
+            "target": [
+              -0.8048207590317664,
+              0.5792922546410522,
+              -1.7782373228373842
+            ],
+            "up": [
+              -0.05326697014014848,
+              0.9874637154635713,
+              -0.14858681144357208
+            ],
+            "vertical_fov_degrees": 48.0
+          },
+          "motion_speeds": [
+            [
+              "circle",
+              "fast"
+            ],
+            [
+              "orbit",
+              "slow"
+            ],
+            [
+              "pan_tilt",
+              "medium"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bathroom",
+      "partition": "validation",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/bathroom.json",
+      "camera": {
+        "position": [
+          0.0072403115259740275,
+          0.9124052736469653,
+          -0.2275841178925894
+        ],
+        "target": [
+          -0.7446392094874944,
+          0.9278763017877911,
+          -0.8867036780077546
+        ],
+        "up": [
+          0.011633724423493155,
+          0.9998806333996412,
+          0.010198462179840426
+        ],
+        "vertical_fov_degrees": 55.0
+      },
+      "focus_distance": 2,
+      "motion_scale": 0.055,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0.3
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.12,
+            0.08,
+            0.15
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "camera": {
+            "position": [
+              -0.06973336732610869,
+              1.120116847877724,
+              -0.8934902334183117
+            ],
+            "target": [
+              -1.9897130915968009,
+              1.1510588923803975,
+              -1.452704367960198
+            ],
+            "up": [
+              0.011633733043739687,
+              0.999880316573188,
+              0.010198469736600636
+            ],
+            "vertical_fov_degrees": 55.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "classroom",
+      "partition": "validation",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/classroom.json",
+      "camera": {
+        "position": [
+          2.576395273208618,
+          1.094475507736206,
+          4.465750694274902
+        ],
+        "target": [
+          2.324345050992314,
+          1.1056744739334392,
+          3.4981013424116867
+        ],
+        "up": [
+          0.0028260166793266372,
+          0.999937289606043,
+          0.010836534691812921
+        ],
+        "vertical_fov_degrees": 39.59775192067671
+      },
+      "focus_distance": 7,
+      "motion_scale": 0.12,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0.12
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0.3,
+            0.15,
+            0.4
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "camera": {
+            "position": [
+              1.2315990172248825,
+              1.4612552506292955,
+              3.270135517850897
+            ],
+            "target": [
+              2.495177473105259,
+              1.5396480140285664,
+              -3.614428670279067
+            ],
+            "up": [
+              0.0028260166799993327,
+              0.999937289606474,
+              0.010836534694395468
+            ],
+            "vertical_fov_degrees": 39.59775192067671
+          }
+        }
+      ]
+    },
+    {
+      "id": "sponza",
+      "partition": "test",
+      "scene_file": "/home/myid/lv37348/new/Path-Tracer-Denoiser/dataset_generation/scenes/sponza.json",
+      "camera": {
+        "position": [
+          -8,
+          1.5,
+          0
+        ],
+        "target": [
+          2,
+          2,
+          0
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "vertical_fov_degrees": 55
+      },
+      "focus_distance": 10,
+      "motion_scale": 0.25,
+      "anchors": [
+        {
+          "name": "view_00",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "yaw_degrees": 0
+        },
+        {
+          "name": "view_01",
+          "offset": [
+            0,
+            0.6,
+            2
+          ],
+          "yaw_degrees": 6
+        },
+        {
+          "name": "view_02",
+          "camera": {
+            "position": [
+              6,
+              1.7,
+              0
+            ],
+            "target": [
+              -4,
+              2,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "vertical_fov_degrees": 55.0
+          }
+        }
+      ]
+    }
+  ],
+  "motion_profiles": {
+    "slow": 0.6,
+    "medium": 1.8,
+    "fast": 3.6
+  },
+  "sample_starts": {
+    "bmw_view_00_linear_slow": 700000000,
+    "bmw_view_00_dolly_medium": 701000000,
+    "bmw_view_00_wave_fast": 702000000,
+    "bmw_view_00_circle_slow": 703000000,
+    "bmw_view_00_orbit_medium": 704000000,
+    "bmw_view_00_pan_tilt_fast": 705000000,
+    "bmw_view_01_linear_medium": 706000000,
+    "bmw_view_01_dolly_fast": 707000000,
+    "bmw_view_01_wave_slow": 708000000,
+    "bmw_view_01_circle_medium": 709000000,
+    "bmw_view_01_orbit_fast": 710000000,
+    "bmw_view_01_pan_tilt_slow": 711000000,
+    "bmw_view_02_linear_fast": 712000000,
+    "bmw_view_02_dolly_slow": 713000000,
+    "bmw_view_02_wave_medium": 714000000,
+    "bmw_view_02_circle_fast": 715000000,
+    "bmw_view_02_orbit_slow": 716000000,
+    "bmw_view_02_pan_tilt_medium": 717000000,
+    "bmw_view_03_linear_slow": 718000000,
+    "bmw_view_03_dolly_medium": 719000000,
+    "bmw_view_03_wave_fast": 720000000,
+    "bmw_view_03_circle_slow": 721000000,
+    "bmw_view_03_orbit_medium": 722000000,
+    "bmw_view_03_pan_tilt_fast": 723000000,
+    "bmw_view_04_linear_medium": 724000000,
+    "bmw_view_04_dolly_fast": 725000000,
+    "bmw_view_04_wave_slow": 726000000,
+    "bmw_view_04_circle_medium": 727000000,
+    "bmw_view_04_orbit_fast": 728000000,
+    "bmw_view_04_pan_tilt_slow": 729000000,
+    "bmw_view_05_linear_fast": 730000000,
+    "bmw_view_05_dolly_slow": 731000000,
+    "bmw_view_05_wave_medium": 732000000,
+    "bmw_view_05_circle_fast": 733000000,
+    "bmw_view_05_orbit_slow": 734000000,
+    "bmw_view_05_pan_tilt_medium": 735000000,
+    "bistro_view_00_linear_slow": 736000000,
+    "bistro_view_00_dolly_medium": 737000000,
+    "bistro_view_00_wave_fast": 738000000,
+    "bistro_view_00_circle_slow": 739000000,
+    "bistro_view_00_orbit_medium": 740000000,
+    "bistro_view_00_pan_tilt_fast": 741000000,
+    "bistro_view_01_linear_medium": 742000000,
+    "bistro_view_01_dolly_fast": 743000000,
+    "bistro_view_01_wave_slow": 744000000,
+    "bistro_view_01_circle_medium": 745000000,
+    "bistro_view_01_orbit_fast": 746000000,
+    "bistro_view_01_pan_tilt_slow": 747000000,
+    "bistro_view_02_linear_fast": 748000000,
+    "bistro_view_02_dolly_slow": 749000000,
+    "bistro_view_02_wave_medium": 750000000,
+    "bistro_view_02_circle_fast": 751000000,
+    "bistro_view_02_orbit_slow": 752000000,
+    "bistro_view_02_pan_tilt_medium": 753000000,
+    "bistro_view_03_linear_slow": 754000000,
+    "bistro_view_03_dolly_medium": 755000000,
+    "bistro_view_03_wave_fast": 756000000,
+    "bistro_view_03_circle_slow": 757000000,
+    "bistro_view_03_orbit_medium": 758000000,
+    "bistro_view_03_pan_tilt_fast": 759000000,
+    "bistro_view_04_linear_medium": 760000000,
+    "bistro_view_04_dolly_fast": 761000000,
+    "bistro_view_04_wave_slow": 762000000,
+    "bistro_view_04_circle_medium": 763000000,
+    "bistro_view_04_orbit_fast": 764000000,
+    "bistro_view_04_pan_tilt_slow": 765000000,
+    "bistro_view_05_linear_fast": 766000000,
+    "bistro_view_05_dolly_slow": 767000000,
+    "bistro_view_05_wave_medium": 768000000,
+    "bistro_view_05_circle_fast": 769000000,
+    "bistro_view_05_orbit_slow": 770000000,
+    "bistro_view_05_pan_tilt_medium": 771000000,
+    "living_room_view_00_linear_slow": 772000000,
+    "living_room_view_00_dolly_medium": 773000000,
+    "living_room_view_00_wave_fast": 774000000,
+    "living_room_view_00_circle_slow": 775000000,
+    "living_room_view_00_orbit_medium": 776000000,
+    "living_room_view_00_pan_tilt_fast": 777000000,
+    "living_room_view_01_linear_medium": 778000000,
+    "living_room_view_01_dolly_fast": 779000000,
+    "living_room_view_01_wave_slow": 780000000,
+    "living_room_view_01_circle_medium": 781000000,
+    "living_room_view_01_orbit_fast": 782000000,
+    "living_room_view_01_pan_tilt_slow": 783000000,
+    "living_room_view_02_linear_fast": 784000000,
+    "living_room_view_02_dolly_slow": 785000000,
+    "living_room_view_02_wave_medium": 786000000,
+    "living_room_view_02_circle_fast": 787000000,
+    "living_room_view_02_orbit_slow": 788000000,
+    "living_room_view_02_pan_tilt_medium": 789000000,
+    "living_room_view_03_linear_slow": 790000000,
+    "living_room_view_03_dolly_medium": 791000000,
+    "living_room_view_03_wave_fast": 792000000,
+    "living_room_view_03_circle_slow": 793000000,
+    "living_room_view_03_orbit_medium": 794000000,
+    "living_room_view_03_pan_tilt_fast": 795000000,
+    "living_room_view_04_linear_medium": 796000000,
+    "living_room_view_04_dolly_fast": 797000000,
+    "living_room_view_04_wave_slow": 798000000,
+    "living_room_view_04_circle_medium": 799000000,
+    "living_room_view_04_orbit_fast": 800000000,
+    "living_room_view_04_pan_tilt_slow": 801000000,
+    "living_room_view_05_linear_fast": 802000000,
+    "living_room_view_05_dolly_slow": 803000000,
+    "living_room_view_05_wave_medium": 804000000,
+    "living_room_view_05_circle_fast": 805000000,
+    "living_room_view_05_orbit_slow": 806000000,
+    "living_room_view_05_pan_tilt_medium": 807000000,
+    "breakfast_room_view_00_linear_slow": 808000000,
+    "breakfast_room_view_00_dolly_medium": 809000000,
+    "breakfast_room_view_00_wave_fast": 810000000,
+    "breakfast_room_view_00_circle_slow": 811000000,
+    "breakfast_room_view_00_orbit_medium": 812000000,
+    "breakfast_room_view_00_pan_tilt_fast": 813000000,
+    "breakfast_room_view_01_linear_medium": 814000000,
+    "breakfast_room_view_01_dolly_fast": 815000000,
+    "breakfast_room_view_01_wave_slow": 816000000,
+    "breakfast_room_view_01_circle_medium": 817000000,
+    "breakfast_room_view_01_orbit_fast": 818000000,
+    "breakfast_room_view_01_pan_tilt_slow": 819000000,
+    "breakfast_room_view_02_linear_fast": 820000000,
+    "breakfast_room_view_02_dolly_slow": 821000000,
+    "breakfast_room_view_02_wave_medium": 822000000,
+    "breakfast_room_view_02_circle_fast": 823000000,
+    "breakfast_room_view_02_orbit_slow": 824000000,
+    "breakfast_room_view_02_pan_tilt_medium": 825000000,
+    "breakfast_room_view_03_linear_slow": 826000000,
+    "breakfast_room_view_03_dolly_medium": 827000000,
+    "breakfast_room_view_03_wave_fast": 828000000,
+    "breakfast_room_view_03_circle_slow": 829000000,
+    "breakfast_room_view_03_orbit_medium": 830000000,
+    "breakfast_room_view_03_pan_tilt_fast": 831000000,
+    "breakfast_room_view_04_linear_medium": 832000000,
+    "breakfast_room_view_04_dolly_fast": 833000000,
+    "breakfast_room_view_04_wave_slow": 834000000,
+    "breakfast_room_view_04_circle_medium": 835000000,
+    "breakfast_room_view_04_orbit_fast": 836000000,
+    "breakfast_room_view_04_pan_tilt_slow": 837000000,
+    "breakfast_room_view_05_linear_fast": 838000000,
+    "breakfast_room_view_05_dolly_slow": 839000000,
+    "breakfast_room_view_05_wave_medium": 840000000,
+    "breakfast_room_view_05_circle_fast": 841000000,
+    "breakfast_room_view_05_orbit_slow": 842000000,
+    "breakfast_room_view_05_pan_tilt_medium": 843000000,
+    "dragon_view_00_linear_slow": 844000000,
+    "dragon_view_00_dolly_medium": 845000000,
+    "dragon_view_00_wave_fast": 846000000,
+    "dragon_view_00_circle_slow": 847000000,
+    "dragon_view_00_orbit_medium": 848000000,
+    "dragon_view_00_pan_tilt_fast": 849000000,
+    "dragon_view_01_linear_medium": 850000000,
+    "dragon_view_01_dolly_fast": 851000000,
+    "dragon_view_01_wave_slow": 852000000,
+    "dragon_view_01_circle_medium": 853000000,
+    "dragon_view_01_orbit_fast": 854000000,
+    "dragon_view_01_pan_tilt_slow": 855000000,
+    "dragon_view_02_linear_fast": 856000000,
+    "dragon_view_02_dolly_slow": 857000000,
+    "dragon_view_02_wave_medium": 858000000,
+    "dragon_view_02_circle_fast": 859000000,
+    "dragon_view_02_orbit_slow": 860000000,
+    "dragon_view_02_pan_tilt_medium": 861000000,
+    "dragon_view_03_linear_slow": 862000000,
+    "dragon_view_03_dolly_medium": 863000000,
+    "dragon_view_03_wave_fast": 864000000,
+    "dragon_view_03_circle_slow": 865000000,
+    "dragon_view_03_orbit_medium": 866000000,
+    "dragon_view_03_pan_tilt_fast": 867000000,
+    "dragon_view_04_linear_medium": 868000000,
+    "dragon_view_04_dolly_fast": 869000000,
+    "dragon_view_04_wave_slow": 870000000,
+    "dragon_view_04_circle_medium": 871000000,
+    "dragon_view_04_orbit_fast": 872000000,
+    "dragon_view_04_pan_tilt_slow": 873000000,
+    "dragon_view_05_linear_fast": 874000000,
+    "dragon_view_05_dolly_slow": 875000000,
+    "dragon_view_05_wave_medium": 876000000,
+    "dragon_view_05_circle_fast": 877000000,
+    "dragon_view_05_orbit_slow": 878000000,
+    "dragon_view_05_pan_tilt_medium": 879000000,
+    "bathroom_view_00_linear_slow": 880000000,
+    "bathroom_view_00_dolly_medium": 881000000,
+    "bathroom_view_00_wave_fast": 882000000,
+    "bathroom_view_00_circle_slow": 883000000,
+    "bathroom_view_00_orbit_medium": 884000000,
+    "bathroom_view_00_pan_tilt_fast": 885000000,
+    "bathroom_view_01_linear_medium": 886000000,
+    "bathroom_view_01_dolly_fast": 887000000,
+    "bathroom_view_01_wave_slow": 888000000,
+    "bathroom_view_01_circle_medium": 889000000,
+    "bathroom_view_01_orbit_fast": 890000000,
+    "bathroom_view_01_pan_tilt_slow": 891000000,
+    "bathroom_view_02_linear_fast": 892000000,
+    "bathroom_view_02_dolly_slow": 893000000,
+    "bathroom_view_02_wave_medium": 894000000,
+    "bathroom_view_02_circle_fast": 895000000,
+    "bathroom_view_02_orbit_slow": 896000000,
+    "bathroom_view_02_pan_tilt_medium": 897000000,
+    "classroom_view_00_linear_slow": 898000000,
+    "classroom_view_00_dolly_medium": 899000000,
+    "classroom_view_00_wave_fast": 900000000,
+    "classroom_view_00_circle_slow": 901000000,
+    "classroom_view_00_orbit_medium": 902000000,
+    "classroom_view_00_pan_tilt_fast": 903000000,
+    "classroom_view_01_linear_medium": 904000000,
+    "classroom_view_01_dolly_fast": 905000000,
+    "classroom_view_01_wave_slow": 906000000,
+    "classroom_view_01_circle_medium": 907000000,
+    "classroom_view_01_orbit_fast": 908000000,
+    "classroom_view_01_pan_tilt_slow": 909000000,
+    "classroom_view_02_linear_fast": 910000000,
+    "classroom_view_02_dolly_slow": 911000000,
+    "classroom_view_02_wave_medium": 912000000,
+    "classroom_view_02_circle_fast": 913000000,
+    "classroom_view_02_orbit_slow": 914000000,
+    "classroom_view_02_pan_tilt_medium": 915000000,
+    "sponza_view_00_linear_slow": 916000000,
+    "sponza_view_00_dolly_medium": 917000000,
+    "sponza_view_00_wave_fast": 918000000,
+    "sponza_view_00_circle_slow": 919000000,
+    "sponza_view_00_orbit_medium": 920000000,
+    "sponza_view_00_pan_tilt_fast": 921000000,
+    "sponza_view_01_linear_medium": 922000000,
+    "sponza_view_01_dolly_fast": 923000000,
+    "sponza_view_01_wave_slow": 924000000,
+    "sponza_view_01_circle_medium": 925000000,
+    "sponza_view_01_orbit_fast": 926000000,
+    "sponza_view_01_pan_tilt_slow": 927000000,
+    "sponza_view_02_linear_fast": 928000000,
+    "sponza_view_02_dolly_slow": 929000000,
+    "sponza_view_02_wave_medium": 930000000,
+    "sponza_view_02_circle_fast": 931000000,
+    "sponza_view_02_orbit_slow": 932000000,
+    "sponza_view_02_pan_tilt_medium": 933000000,
+    "bistro_view_04_forward_circle_medium": 1200000000,
+    "bistro_view_04_forward_orbit_fast": 1201000000,
+    "bistro_view_04_forward_pan_tilt_slow": 1202000000,
+    "bistro_view_05_forward_linear_fast": 1203000000,
+    "bistro_view_05_forward_dolly_slow": 1204000000,
+    "bistro_view_05_forward_wave_medium": 1205000000,
+    "bistro_view_03_left_circle_slow": 1206000000,
+    "bistro_view_03_left_orbit_medium": 1207000000,
+    "bistro_view_03_left_pan_tilt_fast": 1208000000,
+    "bistro_view_02_forward_linear_medium": 1209000000,
+    "bistro_view_02_forward_dolly_fast": 1210000000,
+    "bistro_view_02_forward_wave_slow": 1211000000,
+    "bistro_view_01_forward_circle_fast": 1212000000,
+    "bistro_view_01_forward_orbit_slow": 1213000000,
+    "bistro_view_01_forward_pan_tilt_medium": 1214000000,
+    "living_room_view_04_right_linear_slow": 1215000000,
+    "living_room_view_04_right_dolly_medium": 1216000000,
+    "living_room_view_04_right_wave_fast": 1217000000,
+    "living_room_view_05_right_circle_medium": 1218000000,
+    "living_room_view_05_right_orbit_fast": 1219000000,
+    "living_room_view_05_right_pan_tilt_slow": 1220000000,
+    "living_room_view_02_left_linear_fast": 1221000000,
+    "living_room_view_02_left_dolly_slow": 1222000000,
+    "living_room_view_02_left_wave_medium": 1223000000,
+    "living_room_view_03_left_circle_slow": 1224000000,
+    "living_room_view_03_left_orbit_medium": 1225000000,
+    "living_room_view_03_left_pan_tilt_fast": 1226000000,
+    "living_room_view_01_left_linear_medium": 1227000000,
+    "living_room_view_01_left_dolly_fast": 1228000000,
+    "living_room_view_01_left_wave_slow": 1229000000,
+    "living_room_view_00_right_circle_fast": 1230000000,
+    "living_room_view_00_right_orbit_slow": 1231000000,
+    "living_room_view_00_right_pan_tilt_medium": 1232000000,
+    "breakfast_room_view_05_right_linear_slow": 1233000000,
+    "breakfast_room_view_05_right_dolly_medium": 1234000000,
+    "breakfast_room_view_05_right_wave_fast": 1235000000,
+    "breakfast_room_view_04_right_circle_medium": 1236000000,
+    "breakfast_room_view_04_right_orbit_fast": 1237000000,
+    "breakfast_room_view_04_right_pan_tilt_slow": 1238000000,
+    "breakfast_room_view_02_right_linear_fast": 1239000000,
+    "breakfast_room_view_02_right_dolly_slow": 1240000000,
+    "breakfast_room_view_02_right_wave_medium": 1241000000,
+    "breakfast_room_view_03_forward_circle_slow": 1242000000,
+    "breakfast_room_view_03_forward_orbit_medium": 1243000000,
+    "breakfast_room_view_03_forward_pan_tilt_fast": 1244000000,
+    "breakfast_room_view_01_forward_linear_medium": 1245000000,
+    "breakfast_room_view_01_forward_dolly_fast": 1246000000,
+    "breakfast_room_view_01_forward_wave_slow": 1247000000,
+    "breakfast_room_view_00_right_circle_fast": 1248000000,
+    "breakfast_room_view_00_right_orbit_slow": 1249000000,
+    "breakfast_room_view_00_right_pan_tilt_medium": 1250000000,
+    "dragon_view_04_right_linear_slow": 1251000000,
+    "dragon_view_04_right_dolly_medium": 1252000000,
+    "dragon_view_04_right_wave_fast": 1253000000,
+    "dragon_view_03_left_circle_medium": 1254000000,
+    "dragon_view_03_left_orbit_fast": 1255000000,
+    "dragon_view_03_left_pan_tilt_slow": 1256000000,
+    "dragon_view_01_left_linear_fast": 1257000000,
+    "dragon_view_01_left_dolly_slow": 1258000000,
+    "dragon_view_01_left_wave_medium": 1259000000,
+    "dragon_view_02_right_circle_slow": 1260000000,
+    "dragon_view_02_right_orbit_medium": 1261000000,
+    "dragon_view_02_right_pan_tilt_fast": 1262000000,
+    "dragon_view_05_forward_linear_medium": 1263000000,
+    "dragon_view_05_forward_dolly_fast": 1264000000,
+    "dragon_view_05_forward_wave_slow": 1265000000,
+    "dragon_view_04_left_circle_fast": 1266000000,
+    "dragon_view_04_left_orbit_slow": 1267000000,
+    "dragon_view_04_left_pan_tilt_medium": 1268000000
+  }
+}

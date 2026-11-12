@@ -136,6 +136,14 @@ class B2SceneArchiver:
                 images.append(image)
                 manifests.append(manifest)
 
+        from .inline_sample_layers import required_layer_pairs
+        for image, manifest in required_layer_pairs(self.output, configs):
+            if not manifest.is_file() or (not image.is_file() and str(image.relative_to(self.output)) not in previous):
+                print(f"Scene {scene} sample layers are incomplete; keeping local files.", flush=True)
+                return False
+            images.append(image)
+            manifests.append(manifest)
+
         if previous and all(not image.exists() for image in images):
             print(f"Scene {scene} already archived to {self.destination}; skipping.", flush=True)
             return True
@@ -144,11 +152,15 @@ class B2SceneArchiver:
         self.directory.mkdir(exist_ok=True)
         sidecars = [self.output / name for name in (
             "capture_lock.json", "split.json", "train.json", "reference-check-plan.json",
-            "reference_policy.json", "reference_convergence.json") if (self.output / name).is_file()]
+            "reference_policy.json", "reference_convergence.json", "sample_layers_lock.json",
+            "SAMPLE_LAYERS_BACKFILL.md") if (self.output / name).is_file()]
         sidecars.extend(sorted((self.output / "capture_configs").glob("*.json")))
+        sidecars.extend(sorted((self.output / "sample_layer_configs").glob("*.json")))
         sidecars.extend(sorted(p for p in (self.output / "capture-history").rglob("*") if p.is_file()))
         sidecars.extend(self.output / "logs" / f"{group}.log" for group in configs
                         if (self.output / "logs" / f"{group}.log").is_file())
+        sidecars.extend(self.output / "logs" / f"layers-{group}.log" for group in configs
+                        if (self.output / "logs" / f"layers-{group}.log").is_file())
         inventory, available, stamps = {}, [], {}
         for path in [*images, *manifests, *sidecars]:
             relative = path.relative_to(self.output).as_posix()
@@ -164,7 +176,15 @@ class B2SceneArchiver:
             else:
                 inventory[relative] = previous[relative]
         for image, manifest in zip(images, manifests):
-            metadata = read_manifest(manifest)
+            if image.name == "layers.exr":
+                from .adaptive_data import read_layer_capture
+                group = manifest.parent.parent.name
+                base = read_manifest(self.output/group/manifest.parent.name)
+                layer_config = json.loads((self.output/"sample_layer_configs"/(group+".json")).read_text())
+                metadata, _ = read_layer_capture(manifest.parent, base, layer_config["sample_layers"],
+                                                 pixels=False, verify_digest=False)
+            else:
+                metadata = read_manifest(manifest)
             if inventory[image.relative_to(self.output).as_posix()]["sha256"] != metadata["image_sha256"]:
                 raise ValueError(f"Local EXR checksum mismatch before {self.provider.upper()} upload: {image}")
 

@@ -27,7 +27,7 @@ MOTIONS = ("linear", "dolly", "wave", "circle", "orbit", "pan_tilt")
 PARTITIONS = ("train", "validation", "test")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET_ROOT = PROJECT_ROOT.parent / "dataset"
-DEFAULT_PLAN = PROJECT_ROOT / "dataset_generation" / "plan-v4.json"
+DEFAULT_PLAN = PROJECT_ROOT / "dataset_generation" / "plan-v4-18.json"
 
 
 def digest(path: Path) -> str:
@@ -155,6 +155,14 @@ def read_plan(path: Path) -> dict:
         if len({a["name"] for a in scene["anchors"]}) != len(scene["anchors"]):
             raise ValueError("Camera anchors must have unique names")
         for anchor in scene["anchors"]:
+            combinations = anchor.get("motion_speeds")
+            if combinations is not None:
+                if (not isinstance(combinations, list) or not combinations
+                        or any(not isinstance(pair, list) or len(pair) != 2
+                               or pair[0] not in plan["motions"]
+                               or pair[1] not in plan.get("motion_profiles", {}) for pair in combinations)
+                        or len({tuple(pair) for pair in combinations}) != len(combinations)):
+                    raise ValueError("Invalid anchor motion/speed combinations")
             frames = trajectory(scene, anchor, plan["motions"][0])
             if not np.isfinite([f["position"] for f in frames]).all():
                 raise ValueError("Non-finite camera trajectory")
@@ -168,11 +176,13 @@ def build_configs(plan_path: Path, *, width=None, height=None, reference_samples
     configs = {}
     for scene in plan["scenes"]:
         for anchor_index, anchor in enumerate(scene["anchors"]):
-            for motion_index, motion in enumerate(plan["motions"]):
+            combinations = anchor.get("motion_speeds", [
+                [motion, ("slow", "medium", "fast")[(anchor_index+i) % 3]]
+                for i, motion in enumerate(plan["motions"])])
+            for motion, profile in combinations:
                 group = f"{scene['id']}_{anchor['name']}_{motion}"
                 multiplier = 1.
                 if "motion_profiles" in plan:
-                    profile = ("slow", "medium", "fast")[(anchor_index+motion_index) % 3]
                     multiplier = plan["motion_profiles"][profile]
                     group += "_"+profile
                 config = {k: plan[k] for k in ("max_depth", "russian_roulette_start_depth", "samples",
@@ -183,13 +193,20 @@ def build_configs(plan_path: Path, *, width=None, height=None, reference_samples
                     scene_file=str((plan_path.parent / scene["scene_file"]).resolve()),
                     width=width or plan["width"], height=height or plan["height"],
                     reference_samples=reference_samples or plan["reference_samples"],
-                    sample_start=plan["sample_start"] + len(configs)*plan["clip_sample_stride"],
+                    sample_start=plan.get("sample_starts", {}).get(
+                        group, plan["sample_start"] + len(configs)*plan["clip_sample_stride"]),
                     frames=trajectory(scene, anchor, motion, plan["frames_per_clip"], motion_multiplier=multiplier))
                 if config["reference_samples"] + config["samples"] > config["sample_stride"]:
                     raise ValueError("Reference budget exceeds the locked sample stride")
                 if config["sample_start"] + len(config["frames"])*config["sample_stride"] > 0xffffffff:
                     raise ValueError("Capture sample range exceeds uint32")
                 configs[group] = config
+    ranges = sorted((c["sample_start"], c["sample_start"] + len(c["frames"])*c["sample_stride"])
+                    for c in configs.values())
+    if any(type(start) is not int or start < 0 for start, _ in ranges):
+        raise ValueError("Invalid sample start")
+    if any(left[1] > right[0] for left, right in zip(ranges, ranges[1:])):
+        raise ValueError("Clip sample ranges overlap")
     return configs
 
 
@@ -255,8 +272,8 @@ def prepare(plan_path: Path, output: Path, configs: dict, executable: Path | Non
     if lock_path.exists():
         previous = json.loads(lock_path.read_text())
         if "revision" in previous:
-            from .capture_history import revision_parent
-            revision_parent(output, previous)
+            from .capture_history import revision_ancestors
+            revision_ancestors(output, previous)
             lock["revision"] = previous["revision"]
         if executable is None:
             lock["renderer_sha256"] = previous["renderer_sha256"]
@@ -405,7 +422,8 @@ def terminate_subprocesses_on_sigterm():
 def run_captures(configs: dict, groups: list[str], output: Path, executable: Path, renderer_root: Path,
                  *, first_frame: int = 0, end_frame: int | None = None,
                  skip_missing_rendered: bool = False,
-                 scene_archiver: B2SceneArchiver | R2SceneArchiver | None = None) -> dict:
+                 scene_archiver: B2SceneArchiver | R2SceneArchiver | None = None,
+                 sample_layer_capture=None) -> dict:
     skip_missing_rendered = skip_missing_rendered or scene_archiver is not None
     captured, skipped, archived = 0, 0, 0
     records = []
@@ -458,6 +476,8 @@ def run_captures(configs: dict, groups: list[str], output: Path, executable: Pat
                 captured += 1
                 records.append({"group": group, "frame": i, "image_sha256": metadata["image_sha256"]})
             print(f"  Completed {end-first} frames in {time.monotonic()-before:.1f}s; log: {log_path}", flush=True)
+        if sample_layer_capture is not None:
+            sample_layer_capture.capture_group(group, first_frame=first_frame, end_frame=stop)
         scene = config["scene"]
         if scene_archiver is not None and group == last_scene_group[scene]:
             scene_configs = {g: c for g, c in configs.items() if c["scene"] == scene}
@@ -522,6 +542,12 @@ def main(argv=None, *, reports=False) -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--scenes", nargs="+")
     parser.add_argument("--groups", nargs="+")
+    parser.add_argument("--sample-layer-spp", nargs="+", type=int,
+                        help="Independent extra SPP layers after each new base clip, up to 32 SPP")
+    parser.add_argument("--sample-layer-renderer", type=Path,
+                        help="Layer-capable renderer; kept separate from the locked base renderer")
+    parser.add_argument("--sample-layers-after-group",
+                        help="Add layers only to clips after this group in the full plan")
     parser.add_argument("--skip-missing-rendered", action="store_true",
                         help="Trust retained manifests/capture logs and skip missing rendered EXRs; "
                              "does not check remote storage and omits the final local split audit")
@@ -538,6 +564,11 @@ def main(argv=None, *, reports=False) -> int:
                         help="Capture only [START,END) per clip, preserving the full plan for later resume")
     parser.add_argument("--partitions", nargs="+", choices=PARTITIONS, default=["validation", "test"] if reports else list(PARTITIONS))
     args = parser.parse_args(argv)
+    if any((args.sample_layer_spp, args.sample_layer_renderer, args.sample_layers_after_group)):
+        if args.stage != "capture" or reports:
+            parser.error("Inline sample layers require the normal capture stage")
+        if not all((args.sample_layer_spp, args.sample_layer_renderer, args.sample_layers_after_group)):
+            parser.error("Supply --sample-layer-spp, --sample-layer-renderer and --sample-layers-after-group together")
     if (args.skip_missing_rendered or args.b2_archive or args.r2_archive) and args.stage != "capture":
         parser.error("--skip-missing-rendered, --b2-archive and --r2-archive require --stage capture")
     skip_missing_rendered = args.skip_missing_rendered or bool(args.b2_archive or args.r2_archive)
@@ -574,6 +605,18 @@ def main(argv=None, *, reports=False) -> int:
         parser.error(f"Build dataset_capture and pass --renderer: {executable}")
     with capture_lock(output), terminate_subprocesses_on_sigterm():
         spec = prepare(args.plan, output, configs, executable)
+        layer_capture = None
+        saved_layers = output/"sample_layers_lock.json"
+        if args.sample_layer_spp or (saved_layers.exists() and args.stage == "capture" and not reports):
+            from .inline_sample_layers import InlineSampleLayers
+            if not args.sample_layer_spp:
+                saved = json.loads(saved_layers.read_text())
+                args.sample_layer_spp = saved["spps"]
+                args.sample_layer_renderer = Path(saved["renderer"])
+                args.sample_layers_after_group = saved["after_group"]
+            layer_capture = InlineSampleLayers(output, configs, args.sample_layer_renderer,
+                args.renderer_root, spps=args.sample_layer_spp, after_group=args.sample_layers_after_group,
+                reserved_reference_samples=plan["report_reference_samples"])
         scene_archiver = B2SceneArchiver(output, args.b2_archive, rclone=args.rclone) if args.b2_archive else None
         if args.r2_archive:
             scene_archiver = R2SceneArchiver(output, args.r2_archive)
@@ -584,9 +627,10 @@ def main(argv=None, *, reports=False) -> int:
                           "dimensions": [next(iter(configs.values()))["width"], next(iter(configs.values()))["height"]],
                           "reference_samples": spec["declared_reference_samples"]}, indent=2), flush=True)
         if args.stage != "plan":
+            extra = {"sample_layer_capture": layer_capture} if layer_capture is not None else {}
             result = run_captures(configs, groups, output, executable, args.renderer_root.resolve(),
                                   first_frame=first, end_frame=end,
-                                  skip_missing_rendered=skip_missing_rendered, scene_archiver=scene_archiver)
+                                  skip_missing_rendered=skip_missing_rendered, scene_archiver=scene_archiver, **extra)
             print(json.dumps({k: v for k, v in result.items() if k != "new_frames"}, indent=2), flush=True)
             if preview or args.stage == "pilot":
                 contact_sheet(output, configs, groups, first_frame=first, end_frame=end)

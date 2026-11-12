@@ -101,16 +101,16 @@ def mock_capture(monkeypatch, output):
 
 def test_production_v5_inherits_all_v4_cameras_without_source_pixels(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    before = digest(root / "dataset_generation/plan-v4.json")
-    configs = build_configs(root / "dataset_generation/plan-v4.json")
+    before = digest(root / "dataset_generation/plan-v4-18.json")
+    configs = build_configs(root / "dataset_generation/plan-v4-18.json")
     output = tmp_path / "v5"
     value = prepare_v5(root / "dataset_generation/plan-v5.json", tmp_path / "not-finished-v4", output)
-    assert len(value["groups"]) == 234
-    assert sum(g["frame_count"] for g in value["groups"].values()) == 1872
+    assert len(value["groups"]) == 162
+    assert sum(g["frame_count"] for g in value["groups"].values()) == 1296
     for group, info in value["groups"].items():
         assert info["source_config"] == configs[group]
         assert info["sample_layers"] == [dict(samples=n, offset=o) for n, o in zip(NEW_LAYER_SPP, [4100,4101,4103,4111,4127])]
-    assert before == digest(root / "dataset_generation/plan-v4.json")
+    assert before == digest(root / "dataset_generation/plan-v4-18.json")
     assert not (output / "base").exists() and not (output / "capture_binding.json").exists()
     assert json.loads((output / "train-joint-plan.json").read_text())["status"] == "planned_requires_adaptive_trainer"
 

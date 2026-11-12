@@ -458,7 +458,7 @@ def test_invalid_motion_multiplier_rejected(multiplier):
 
 def test_v4_expands_viewpoints_and_motion_without_changing_paused_plan():
     from collections import Counter
-    from wavefront_denoiser.dataset_generation import DEFAULT_PLAN
+    DEFAULT_PLAN = PLAN.with_name("plan-v4.json")
     plan = read_plan(DEFAULT_PLAN)
     old_plan = read_plan(PLAN.with_name("plan-v3.json"))
     configs = build_configs(DEFAULT_PLAN)

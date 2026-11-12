@@ -6,7 +6,8 @@ the package installed (`pip install -e '.[train,test]'`). The environment used f
 local checks is `/tmp/ntasad-venv/bin/python`; replace `python3` with your activated
 environment's Python when needed.
 
-`plan-v4.json` is the editable source of truth. It uses 1920×1080 captures, eight
+`plan-v4-18.json` is the current source of truth. The original `plan-v4.json`
+remains preserved. It uses 1920×1080 captures, eight
 frames per clip, independent 4-SPP noisy inputs and 1024-SPP references, depth 12,
 Russian roulette from depth 5, 256×256 render tiles, caustics disabled, and an
 explicit `indirect_radiance_clamp` of **10** for both noisy inputs and references.
@@ -37,14 +38,98 @@ sample range, so its changed trajectories cannot mix with the paused captures.
 See the renderer
 [diagnosis](../../Wavefront-Path-Tracer/docs/diagnostics/bmw-hdr-fireflies/README.md).
 
-**Current status (2026-11-10):** all 234 v4 configs and the split are prepared
-and locked to the checked integrator-11 renderer. Bulk generation and training
-remain stopped. References retain their declared
+**Scope reduction (2026-11-11):** upcoming scenes use 18 eight-frame clips.
+Each unfinished training scene keeps six viewpoints and uses three motion/speed
+combinations per viewpoint, covering all six motions × three speeds exactly
+once. BMW's already archived 36 clips are retained, so the effective dataset
+contains 162 clips / 1296 frames rather than discarding its 18 extra clips.
+The separate v5 companion plan inherits this reduced plan for its 1/2/8/16/32-SPP
+layers. The active resume now captures those layers alongside upcoming clips,
+as described below.
+
+For Bistro, Living Room, Breakfast Room and Dragon, 24 candidates per scene
+were evaluated at 160×90, 1+1 SPP. Selection greedily maximizes diversity using
+material/normal/depth layout (70%) and camera pose (30%), rejecting near-surface
+or mostly invalid views. This is a coverage heuristic, not a global optimum.
+Bistro's `view_00` is pinned to retain its completed clip and four completed
+frames in the second clip. Eight-frame paths receive separate 1+4-SPP checks.
+Diagnostic images, candidate metrics and selection records are in
+`../../dataset/denoiser-v4-candidates/`; full path checks are in
+`../../dataset/denoiser-v4-18-cameras/`.
+
+The scope migration preserves the prior lock/configs/split in `capture-history/`,
+checks every retained local EXR and archived manifest, and keeps cameras and
+sample IDs unchanged for existing captures. It uses the same output/R2 prefix.
+Resume with `bash dataset/denoiser-v4/resume.sh` from the workspace root.
+Original sample slots are retained; new candidate groups use slots starting at
+1.2 billion, separate from convergence replicas starting at 1 billion.
+
+To repeat candidate selection for a new run, use a fresh diagnostics directory:
+
+```bash
+python3 tools/select_dataset_viewpoints.py \
+  --source-plan dataset_generation/plan-v4.json \
+  --plan-output dataset_generation/plan-v4-18.json \
+  --renderer /tmp/ntasad-capture-build/dataset_capture
+python3 tools/check_dataset_cameras.py \
+  --plan dataset_generation/plan-v4-18.json \
+  --renderer /tmp/ntasad-capture-build/dataset_capture \
+  --output ../dataset/denoiser-v4-18-cameras
+```
+
+For the existing run the explicit migration has already been applied; do not
+rerun it on an active capture. The migration command is recorded here for review:
+
+```bash
+python3 tools/apply_dataset_scope.py \
+  --plan dataset_generation/plan-v4-18.json --output ../dataset/denoiser-v4 \
+  --renderer /tmp/ntasad-capture-build/dataset_capture \
+  --selection-report ../dataset/denoiser-v4-candidates/selection.json
+```
+
+References retain their declared
 fixed-budget status; clamping does not confer convergence qualification.
+
+### Additional SPP layers in the same resume
+
+`../../dataset/denoiser-v4/resume.sh` finishes Bistro's second clip at its
+original 4+1024-SPP settings. Starting with `bistro_view_00_wave_fast`, it renders
+the base eight-frame clip, then independent **1/2/8/16/32-SPP** RGB layers before
+advancing to the next clip. The existing 4-SPP input supplies the sixth layer:
+1+2+4+8+16+32 = **63** samples of capacity. There is no separate 64-SPP layer.
+The extra captures require 59 samples per pixel, about 5.7% of the base's 1028
+samples; wall time also includes scene loading, validation and EXR writes.
+
+`sample_layers/GROUP/frame_NNNNNN/layers.exr` contains linear HDR means in
+`spp_1.R/G/B`, `spp_2.R/G/B`, `spp_8.R/G/B`, `spp_16.R/G/B`, and `spp_32.R/G/B`.
+Its manifest binds cameras, integrator/settings, base sample allocation, channel
+names and image checksum. The base EXR supplies guides and the reference image.
+Extra samples occupy disjoint intervals beginning at offset 4100, after the
+reserved 4096-SPP report reference, inside the existing 8192-sample frame stride.
+
+The 38 earlier clips (all 36 BMW clips and both initial Bistro clips), totaling
+304 frames, are listed in `SAMPLE_LAYERS_BACKFILL.md` under the dataset output.
+The second Bistro clip remains on that list even for frames completed after
+enablement. Those layers can be generated separately later using their original
+integrator provenance. The remaining 124 clips / 992 frames receive extra layers.
+
+`sample_layers_lock.json` fixes the clip boundary, SPP counts, base lock,
+renderer checksum and layer configs. Resume skips validated completed layers,
+recovers partial layer exports, and automatically reloads this binding if the
+layer flags are omitted. R2/B2 scene archiving requires the extra images too,
+checks their hashes, uploads their manifests/configs and the backfill README,
+then removes only verified local EXRs. The persistent base renderer is
+`../../dataset/bin/dataset_capture-base-integrator12`; its bytes match the
+original capture lock and support the existing layer-only export mode.
+
+This inline layout is separate from v5's `base/`, `layers/`, `frames/` layout.
+It stores the same companion format and sample intervals. V5's current loader
+still expects its own indexed layout; these files are retained for reuse or
+later backfill/import, rather than silently duplicating the original captures.
 
 | Partition | Scenes | Clips | Frames |
 | --- | --- | ---: | ---: |
-| Train | BMW, Bistro, Living Room, Breakfast Room, Dragon | 180 | 1440 |
+| Train | BMW (36 retained), Bistro, Living Room, Breakfast Room, Dragon | 108 | 864 |
 | Validation | Bathroom, Classroom2 | 36 | 288 |
 | Final evaluation | Sponza | 18 | 144 |
 
@@ -54,9 +139,10 @@ model trains on validation or test scenes. Training and checkpoint selection do
 not load test pixels. Camera previews may display the test scene for framing;
 do not use its denoising results to tune hyperparameters.
 
-Each training scene has **six anchors × six motions**; held-out scenes have
-**three anchors × six motions**. V3's original nearby anchors are retained;
-new anchors have explicit world-space `camera` poses in other parts of the scene.
+Upcoming training scenes have **six viewpoints × three motion/speed pairs**;
+BMW retains its already completed six viewpoints × six motions. Held-out scenes
+keep **three anchors × six motions**, also covering all 18 motion/speed pairs.
+Selected new anchors have explicit world-space `camera` poses.
 BMW adds views around the car, Bistro moves along the street, interiors add
 translated/reoriented views, Dragon adds side/elevated views, and Sponza adds a
 view from the opposite end. An anchor's optional `camera` supplies its own
@@ -73,8 +159,8 @@ its top light.
 V4 cycles **slow (0.6×), medium (1.8×), and fast (3.6×)** across anchors and
 motion types. Medium and fast are approximately **29% faster** than v3's 1.4×
 and 2.8×; slow is unchanged. Each training motion appears at every speed from
-two viewpoints. Multipliers scale translation/arc/pan amplitude over the same
-eight frames, not playback speed. These are engineering choices, not camera
+one viewpoint in upcoming scenes (BMW retains two). Multipliers scale
+translation/arc/pan amplitude over the same eight frames, not playback speed. These are engineering choices, not camera
 speeds specified by the paper. V1–v3 plans and outputs remain available separately.
 
 ## Inspect and pilot
@@ -89,7 +175,7 @@ persistent directory rather than depending on `/tmp` surviving a reboot.
 # can bind this planned output to its renderer binary.
 python3 tools/generate_dataset.py --stage plan
 
-# Check all planned cameras of all 234 clips, pooled by scene to avoid
+# Check all planned cameras of all 162 clips, pooled by scene to avoid
 # repeatedly loading Bistro. Outputs are diagnostic, never training captures.
 python3 tools/check_dataset_cameras.py \
   --renderer /tmp/ntasad-capture-build/dataset_capture
@@ -131,13 +217,14 @@ plan/assets/renderer change after capture begins.
 
 ## Run through an SSH disconnect
 
-A foreground process can die when SSH disconnects. This launcher uses `nohup`,
-redirects stdin/stdout/stderr, and prints its PID and log path:
+A foreground process can die when SSH disconnects. This launcher uses `nohup`
+and, when available, `setsid` to detach the process session. It redirects
+stdin/stdout/stderr and prints its PID and log path:
 
 ```bash
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh \
-  --plan dataset_generation/plan-v4.json \
+  --plan dataset_generation/plan-v4-18.json \
   --renderer /tmp/ntasad-capture-build/dataset_capture
 ```
 
@@ -185,7 +272,7 @@ elsewhere, opt into archive-aware resume:
 ```bash
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh \
-  --plan dataset_generation/plan-v4.json \
+  --plan dataset_generation/plan-v4-18.json \
   --renderer /tmp/ntasad-capture-build/dataset_capture \
   --skip-missing-rendered
 ```
@@ -241,7 +328,7 @@ export B2_APPLICATION_KEY_ID B2_APPLICATION_KEY
 
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh \
-  --plan dataset_generation/plan-v4.json \
+  --plan dataset_generation/plan-v4-18.json \
   --renderer /tmp/ntasad-capture-build/dataset_capture \
   --b2-archive b2://YOUR_BUCKET/denoiser-v4
 ```
@@ -333,7 +420,7 @@ environment to the bucket's HTTPS S3 endpoint, without the bucket/path.
 # After stopping the previous capture, resume using the dedicated R2 launcher:
 DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   ./tools/run_dataset_background.sh r2 \
-  --plan dataset_generation/plan-v4.json \
+  --plan dataset_generation/plan-v4-18.json \
   --renderer /tmp/ntasad-capture-build/dataset_capture \
   --output ../dataset/denoiser-v4
 ```
@@ -393,8 +480,8 @@ renderer/upload subprocess. Avoid `kill -9` for routine stops because it bypasse
 that cleanup. These commands are instructions; changing the code does not stop
 or restart a running capture automatically.
 
-The raw 22-channel float32/uint32 payload is about 174 MiB/frame, or 318 GiB for
-all 1872 frames before lossless EXR compression. Actual disk use and render time
+The raw 22-channel float32/uint32 payload is about 174 MiB/frame, or 220 GiB for
+all 1296 frames before lossless EXR compression. Actual disk use and render time
 must be measured from the pilot. The report dataset requires separate space.
 Local capture uses the renderer task API; this launcher does not distribute
 capture or resume the renderer's per-sample local/distributed checkpoint files.

@@ -25,6 +25,14 @@ def revision_parent(output: Path, lock: dict) -> str | None:
     if not path.is_file() or sha256(path) != digest:
         raise ValueError("Capture revision parent checksum mismatch")
     parent = json.loads(path.read_text())
+    if revision.get("kind") == "scope_reduction":
+        groups = revision.get("preserved_groups", [])
+        if (not groups or len(groups) != len(set(groups))
+                or lock["renderer_sha256"] != parent["renderer_sha256"]
+                or lock["assets"] != parent["assets"]
+                or any(g not in lock["configs"] or lock["configs"][g] != parent["configs"].get(g)
+                       for g in groups)):
+            raise ValueError("Scope revision changed preserved captures, renderer or assets")
     reused = revision.get("reused_scenes", [])
     reset = revision.get("reset_scenes", [])
     if not reused or set(reused) & set(reset):
@@ -50,11 +58,28 @@ def revision_parent(output: Path, lock: dict) -> str | None:
     return revision["parent_lock"]
 
 
+def revision_ancestors(output: Path, lock: dict) -> list[str]:
+    """Validate each edge before trusting any older cloud lock or receipt."""
+    ancestors = []
+    while (parent := revision_parent(output, lock)) is not None:
+        if parent in ancestors or len(ancestors) >= 16:
+            raise ValueError("Cyclic or excessive capture revision history")
+        ancestors.append(parent)
+        lock = json.loads((output / parent).read_text())
+    return ancestors
+
+
 def compatible_receipt_lock(output: Path, scene: str, receipt_lock: str, current_lock: str) -> bool:
     if receipt_lock == current_lock:
         return True
     lock = json.loads((output / "capture_lock.json").read_text())
-    if revision_parent(output, lock) is None:
-        return False
-    revision = lock["revision"]
-    return scene in revision["reused_scenes"] and receipt_lock == revision["parent_sha256"]
+    seen = set()
+    while revision_parent(output, lock) is not None:
+        revision = lock["revision"]
+        if scene not in revision["reused_scenes"] or revision["parent_sha256"] in seen:
+            return False
+        if receipt_lock == revision["parent_sha256"]:
+            return True
+        seen.add(revision["parent_sha256"])
+        lock = json.loads((output / revision["parent_lock"]).read_text())
+    return False

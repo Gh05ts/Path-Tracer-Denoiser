@@ -26,8 +26,8 @@ def read_json(path: Path) -> dict:
     return value
 
 
-def layer_layout(config: dict, report_reference_samples: int) -> list[dict]:
-    """Reserve noisy and both reference budgets, then allocate five disjoint blocks."""
+def layer_layout(config: dict, report_reference_samples: int, *, spps=NEW_LAYER_SPP) -> list[dict]:
+    """Reserve noisy and both reference budgets, then allocate disjoint blocks."""
     for name in ("samples", "reference_samples", "sample_stride", "sample_start"):
         if type(config.get(name)) is not int or config[name] < (0 if name == "sample_start" else 1):
             raise ValueError(f"Invalid source sample allocation: {name}")
@@ -35,7 +35,10 @@ def layer_layout(config: dict, report_reference_samples: int) -> list[dict]:
         raise ValueError("v5 requires a 4-SPP source and a reserved report budget >= training reference SPP")
     offset = 4 + report_reference_samples
     result = []
-    for spp in NEW_LAYER_SPP:
+    if (not spps or len(set(spps)) != len(spps)
+            or any(type(n) is not int or n < 1 or n > 32 or n & (n-1) for n in spps)):
+        raise ValueError("Sample layers require unique powers of two up to 32")
+    for spp in spps:
         result.append({"samples": spp, "offset": offset})
         offset += spp
     if offset > config["sample_stride"]:

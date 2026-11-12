@@ -2,7 +2,7 @@
   "format": "wavefront-ntasad-companion-plan",
   "version": 1,
   "dataset_id": "denoiser-v5",
-  "source_plan": "plan-v4.json",
+  "source_plan": "plan-v4-18.json",
   "reuse_spp": 4,
   "new_layer_spp": [1, 2, 8, 16, 32]
 }

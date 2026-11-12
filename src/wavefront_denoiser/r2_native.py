@@ -165,13 +165,13 @@ class R2NativeClient:
         lock = "capture_lock.json"
         preserved = set()
         if lock in remote and lock in inventory and not self.matches(remote[lock], inventory[lock]):
-            from .capture_history import revision_parent
+            from .capture_history import revision_ancestors
             import json
             try:
-                parent = revision_parent(root, json.loads((root / lock).read_text()))
+                parents = revision_ancestors(root, json.loads((root / lock).read_text()))
             except (ValueError, KeyError, OSError):
-                parent = None
-            if not parent or parent not in inventory or not self.matches(remote[lock], inventory[parent]):
+                parents = []
+            if not any(parent in inventory and self.matches(remote[lock], inventory[parent]) for parent in parents):
                 raise ValueError("R2 prefix already contains a different capture lock; choose a new prefix")
             # Preserve and verify immutable ancestry/evidence before replacing
             # the live lock. A retry can safely finish either half of this step.

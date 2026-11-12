@@ -85,6 +85,47 @@ def test_cloud_revision_refuses_unrelated_remote_lock(tmp_path,r2_api):
     assert r2_api.uploads == 0
 
 
+def scope_revision(root):
+    old, _, _ = revised_capture(root)
+    parent_hash = sha256(root/"capture_lock.json")
+    parent = f"capture-history/{parent_hash}.json"
+    (root/parent).write_bytes((root/"capture_lock.json").read_bytes())
+    new = dict(old, revision={"kind": "scope_reduction", "parent_lock": parent,
+        "parent_sha256": parent_hash, "preserved_groups": ["bmw_clip"],
+        "reused_scenes": ["bmw"], "reset_scenes": [],
+        "validation": old["revision"]["validation"]})
+    (root/"capture_lock.json").write_text(json.dumps(new))
+    return new
+
+
+def test_scope_revision_keeps_older_scene_receipts_and_cloud_lock(tmp_path, r2_api):
+    new = scope_revision(tmp_path)
+    intermediate = json.loads((tmp_path/new["revision"]["parent_lock"]).read_text())
+    original = tmp_path/intermediate["revision"]["parent_lock"]
+    r2_api.objects["run/capture_lock.json"] = original.read_bytes()
+    assert compatible_receipt_lock(tmp_path, "bmw", sha256(original), sha256(tmp_path/"capture_lock.json"))
+    names = ["capture_lock.json"] + [p.relative_to(tmp_path).as_posix() for p in (tmp_path/"capture-history").glob("*")]
+    client = R2NativeClient("bucket", "run")
+    client.preflight()
+    client.upload_files(tmp_path, names, {n: file_hashes(tmp_path/n) for n in names})
+    assert r2_api.objects["run/capture_lock.json"] == (tmp_path/"capture_lock.json").read_bytes()
+
+
+@pytest.mark.parametrize("change", ["renderer", "preserved_group", "ancestor"])
+def test_scope_revision_rejects_changed_capture_provenance(tmp_path, change):
+    from wavefront_denoiser.capture_history import revision_ancestors
+    new = scope_revision(tmp_path)
+    if change == "renderer":
+        new["renderer_sha256"] = "other"
+    elif change == "preserved_group":
+        new["configs"] = {"bmw_clip": dict(new["configs"]["bmw_clip"], samples=8)}
+    else:
+        parent = json.loads((tmp_path/new["revision"]["parent_lock"]).read_text())
+        (tmp_path/parent["revision"]["parent_lock"]).write_text("changed")
+    with pytest.raises(ValueError):
+        revision_ancestors(tmp_path, new)
+
+
 def test_sigv4_matches_published_aws_s3_signature():
     # AWS's Get Bucket (List Objects) example is an independent signing vector:
     # https://docs.aws.amazon.com/AmazonS3/latest/developerguide/sig-v4-header-based-auth.html

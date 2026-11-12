@@ -19,7 +19,13 @@ log_dir="$dataset_workspace/dataset/jobs"
 mkdir -p "$log_dir"
 job_name="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 log_file="$log_dir/$job_name.log"
-nohup "$python_bin" -u "$entry" "$@" >"$log_file" 2>&1 < /dev/null &
+# A separate session also survives an execution service cleaning up the
+# launching shell's process group. nohup alone only handles SIGHUP.
+detach=()
+if command -v setsid > /dev/null 2>&1; then
+    detach=(setsid)
+fi
+nohup "${detach[@]}" "$python_bin" -u "$entry" "$@" >"$log_file" 2>&1 < /dev/null &
 job_pid=$!
 printf '%s\n' "$job_pid" > "$log_dir/$job_name.pid"
 printf 'Started PID %s\nLog: %s\nMonitor: tail -f "%s"\n' "$job_pid" "$log_file" "$log_file"
