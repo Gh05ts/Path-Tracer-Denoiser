@@ -15,7 +15,7 @@ from .sequence_data import transform_window
 
 class JointPatchDataset(torch.utils.data.Dataset):
     def __init__(self, root, *, partition, length=5, patch_size=128, patches_per_window=1, augment=True,
-                 sequence_ids=None):
+                 sequence_ids=None, frame_source=None):
         if (type(patch_size) is not int or patch_size < 1 or type(patches_per_window) is not int
                 or patches_per_window < 1 or type(length) is not int or length < 3 or type(augment) is not bool):
             raise ValueError("Need positive joint crop/count and at least three frames")
@@ -30,6 +30,7 @@ class JointPatchDataset(torch.utils.data.Dataset):
             if patch_size > min(config["width"],config["height"]):
                 raise ValueError("Joint patch size exceeds source dimensions")
         self.patch_size,self.patches_per_window,self.augment = patch_size,patches_per_window,augment
+        self.frame_source = frame_source
 
     def __len__(self):
         return len(self.sequences)*self.patches_per_window
@@ -54,7 +55,8 @@ class JointPatchDataset(torch.utils.data.Dataset):
                 continue
             # Release each decoded full frame before decoding the next. Only
             # cropped copies survive into a five-frame training batch.
-            frame = load_v5_frame(self.sequences.root,group,frame_index)
+            frame = (load_v5_frame(self.sequences.root,group,frame_index) if self.frame_source is None
+                     else self.frame_source.load_frame(group,frame_index))
             cropped = {key:np.ascontiguousarray(value[top:top+size,left:left+size]) for key,value in frame.base.buffers.items()}
             values.append(Frame(frame.base.manifest_path,frame.base.metadata,cropped).as_tensors())
             layer = np.ascontiguousarray(frame.layers[:,top:top+size,left:left+size])
@@ -71,8 +73,11 @@ class JointPatchDataset(torch.utils.data.Dataset):
                 "frame_indices":list(range(start,start+length))}
 
 
-def joint_inventory(root, selections=None):
-    """Verify train/validation bytes and freeze metadata; never open test images."""
+def joint_inventory(root, selections=None, *, verify_images=True):
+    """Freeze selected provenance; optionally defer EXR byte checks to streaming.
+
+    Test image bytes are never opened, including in the default eager audit.
+    """
     root = Path(root)
     descriptor = read_v5_dataset(root)
     decoded = descriptor.get("storage") == "decoded"
@@ -96,7 +101,7 @@ def joint_inventory(root, selections=None):
             info = descriptor["groups"][group]
             identity = None
             for index in range(info["frame_count"]):
-                _,base = verify_v5_record(root,group,index)
+                _,base = verify_v5_record(root,group,index,verify_images=verify_images)
                 scene = base.get("scene_fingerprint")
                 if not isinstance(scene,str) or not scene or any(c not in "0123456789abcdef" for c in scene):
                     raise ValueError("Joint training requires valid source scene fingerprints")

@@ -10,6 +10,7 @@ from http.client import HTTPException
 import os
 from pathlib import Path
 import re
+import tempfile
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
@@ -142,6 +143,59 @@ class R2NativeClient:
             if not token or token in seen:
                 raise ValueError("R2 file listing did not advance; local EXRs were retained")
             seen.add(token)
+
+    def download_file(self, relative: str, path: Path, *, sha256: str | None = None,
+                      size: int | None = None, max_bytes: int = 5_000_000_000):
+        """Stream a signed GET to disk; publish only a complete, verified file.
+
+        Retries start from byte zero. No full response is buffered in memory,
+        and partial downloads are removed on every failure.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        url = self._url(relative, None)
+        for attempt in range(3):
+            temporary = None
+            try:
+                headers = signed_headers("GET", url, self.access_key, self.secret_key, EMPTY_SHA256)
+                with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name+".", suffix=".partial",
+                                                 delete=False) as target:
+                    temporary = Path(target.name)
+                    digest, received = hashlib.sha256(), 0
+                    with urlopen(Request(url, method="GET", headers=headers), timeout=300) as response:
+                        declared = response.headers.get("Content-Length")
+                        declared = int(declared) if declared is not None else None
+                        if declared is not None and (declared > max_bytes or (size is not None and declared != size)):
+                            raise ValueError("R2 download size disagrees with inventory or exceeds limit")
+                        while block := response.read(1024 * 1024):
+                            received += len(block)
+                            if received > max_bytes or (size is not None and received > size):
+                                raise ValueError("R2 download exceeds expected size or limit")
+                            digest.update(block)
+                            target.write(block)
+                    if ((size is not None and received != size) or
+                            (declared is not None and received != declared)):
+                        raise ValueError("Incomplete R2 download")
+                    if sha256 is not None and digest.hexdigest() != sha256:
+                        raise ValueError("R2 download SHA-256 mismatch")
+                temporary.replace(path)
+                return {"size": received, "sha256": digest.hexdigest()}
+            except HTTPError as error:
+                try:
+                    code = ET.fromstring(error.read()).findtext("Code") or "request_failed"
+                except ET.ParseError:
+                    code = "request_failed"
+                finally:
+                    error.close()
+                failure = R2RequestError(error.code, code)
+            except (URLError, OSError, HTTPException):
+                failure = R2RequestError(0, "connection_failed")
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            if not failure.temporary or attempt == 2:
+                raise failure from None
+            time.sleep(2 ** attempt)
 
     @staticmethod
     def matches(remote, expected):

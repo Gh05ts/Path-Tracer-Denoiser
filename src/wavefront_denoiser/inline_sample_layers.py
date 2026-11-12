@@ -15,16 +15,26 @@ LOCK_NAME = "sample_layers_lock.json"
 
 
 def required_layer_pairs(output, configs):
-    """The archive must include every required companion image and manifest."""
+    """Include inline clips and separately configured backfills in the archive."""
     path = output/LOCK_NAME
     if not path.exists():
         return []
     lock = json.loads(path.read_text())
     if lock["base_capture_lock_sha256"] != digest(output/"capture_lock.json"):
         raise ValueError("Sample-layer binding disagrees with the base capture lock")
+    groups = set(lock["groups"])
+    for group, config in configs.items():
+        path = output/"sample_layer_configs"/(group+".json")
+        if group in groups or not path.exists():
+            continue
+        expected = dict(config, sample_layers=layer_layout(config, lock["reserved_reference_samples"], spps=lock["spps"]),
+                        reserved_reference_samples=lock["reserved_reference_samples"])
+        if json.loads(path.read_text()) != expected:
+            raise ValueError(f"Backfill sample-layer config disagrees with source: {group}")
+        groups.add(group)
     return [(output/"sample_layers"/g/f"frame_{i:06d}"/"layers.exr",
              output/"sample_layers"/g/f"frame_{i:06d}"/"manifest.json")
-            for g, c in configs.items() if g in lock["groups"] for i in range(len(c["frames"]))]
+            for g, c in configs.items() if g in groups for i in range(len(c["frames"]))]
 
 
 class InlineSampleLayers:

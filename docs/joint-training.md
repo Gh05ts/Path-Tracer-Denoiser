@@ -5,6 +5,13 @@ recurrent frames. It supports bounded allocations, crop-aware layer replay and
 epoch-boundary resume. The uniform trainer and its checkpoints retain their
 existing interfaces.
 
+Production inputs come from the v4 generator's inline layers in R2, including
+later BMW/early Bistro backfills. See the [streaming training plan and minimal
+loader](r2-streaming-training.md). No v5 generation is required; the adapter
+reuses the joint reader's local metadata schema. A 16 GB cache and 4 GB prefetch
+buffer are planned after the synchronous pilot. The optional standalone v5
+layout remains compatible with the training instructions below.
+
 ## Run and resume
 
 From the denoiser checkout, after the selected v5 train/validation clips have
