@@ -13,8 +13,11 @@ Russian roulette from depth 5, 256×256 render tiles, caustics disabled, and an
 explicit `indirect_radiance_clamp` of **10** for both noisy inputs and references.
 Adaptive sampling remains deferred.
 
-For the separate v5 companion dataset, see [layer capture and reuse](V5.md).
-It inherits this v4 plan and leaves the active v4 capture workflow unchanged.
+The final training dataset uses this v4 generator's inline sample layers and
+streams from R2. See the [streaming training plan](../docs/r2-streaming-training.md)
+for the current synchronous pilot and planned 16 GB cache + 4 GB prefetch.
+The [separate v5 workflow](V5.md) is optional compatibility support and is not
+required to generate or train the production dataset.
 
 **Bistro correction (2026-11-11):** integrator 12 fixes missing small instanced
 geometry and the black front banner. See the [diagnosis and validation](../../Wavefront-Path-Tracer/docs/diagnostics/bistro-scene-fix.md).
@@ -122,10 +125,14 @@ then removes only verified local EXRs. The persistent base renderer is
 `../../dataset/bin/dataset_capture-base-integrator12`; its bytes match the
 original capture lock and support the existing layer-only export mode.
 
-This inline layout is separate from v5's `base/`, `layers/`, `frames/` layout.
-It stores the same companion format and sample intervals. V5's current loader
-still expects its own indexed layout; these files are retained for reuse or
-later backfill/import, rather than silently duplicating the original captures.
+The R2 training adapter reads this inline layout directly, including later
+backfills for BMW and the first two Bistro clips. It builds only a local JSON
+index for the shared joint reader; no separate v5 generation or copied base
+dataset is needed. Backfills must publish per-clip `sample_layer_configs` and
+verified scene receipts covering their base/config/layer hashes. The original
+inline capture boundary stays unchanged. The shared archiver requires those
+backfill layers once their configs are present. See the
+[backfill publication contract](../docs/r2-streaming-training.md#deferred-bmw-and-early-bistro-backfills).
 
 | Partition | Scenes | Clips | Frames |
 | --- | --- | ---: | ---: |

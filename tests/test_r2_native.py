@@ -173,6 +173,11 @@ def r2_api(monkeypatch):
             assert headers["host"] == parsed.netloc
             method = request.get_method()
             self.calls.append((method, request.full_url))
+            if method == "GET" and parsed.path != "/bucket":
+                key = unquote(parsed.path.removeprefix("/bucket/"))
+                if key not in self.objects:
+                    self.fail(request.full_url, 404, "NoSuchKey")
+                return Response(self.objects[key], {"Content-Length": str(len(self.objects[key]))})
             if method == "PUT":
                 assert hasattr(request.data, "read") and request.data.tell() == 0
                 key = unquote(parsed.path.removeprefix("/bucket/"))

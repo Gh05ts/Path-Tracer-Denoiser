@@ -8,6 +8,7 @@ import pytest
 from wavefront_denoiser.b2_archive import B2SceneArchiver
 from wavefront_denoiser.dataset_generation import digest, run_captures, write_json
 from wavefront_denoiser.inline_sample_layers import InlineSampleLayers
+from wavefront_denoiser.adaptive_data import layer_layout
 from test_adaptive_dataset import fake_layers
 from test_b2_archive import fake_rclone
 from test_dataset_generation import create_frame, small_config
@@ -130,3 +131,28 @@ def test_group_layers_are_completed_before_scene_archive(inline_data, monkeypatc
     run_captures(configs, list(configs), output, renderer, output, scene_archiver=Archive(),
                  sample_layer_capture=Layers())
     assert events == [("layers", "old"), ("layers", "boundary"), ("layers", "new"), ("archive", "bmw")]
+
+
+def test_separate_backfill_is_required_and_included_in_scene_archive(inline_data, monkeypatch, fake_rclone):
+    output, configs, _ = inline_data
+    capture = manager(inline_data)
+    lock_before = (output/"sample_layers_lock.json").read_bytes()
+    with monkeypatch.context() as local:
+        capture_layers(inline_data, local)
+        capture.capture_group("new")
+    config = dict(configs["old"], sample_layers=layer_layout(configs["old"], 64), reserved_reference_samples=64)
+    write_json(output/"sample_layer_configs/old.json", config)
+    archiver = B2SceneArchiver(output, fake_rclone.destination)
+    archiver.preflight()
+    assert not archiver.archive_scene("bmw", configs)
+    assert list(output.glob("*/frame_*/frame.exr"))
+    for index in range(2):
+        relative = Path("old")/f"frame_{index:06d}"
+        base = json.loads((output/relative/"manifest.json").read_text())
+        fake_layers(output/"sample_layers"/relative, base, config["sample_layers"])
+    assert archiver.archive_scene("bmw", configs)
+    receipt = json.loads((output/"b2-archives/bmw.json").read_text())
+    assert "sample_layer_configs/old.json" in receipt["files"]
+    assert "sample_layers/old/frame_000000/layers.exr" in receipt["files"]
+    assert not list(output.glob("sample_layers/*/frame_*/layers.exr"))
+    assert (output/"sample_layers_lock.json").read_bytes() == lock_before

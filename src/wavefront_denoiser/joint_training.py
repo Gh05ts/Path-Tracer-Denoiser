@@ -24,12 +24,25 @@ def training_config(path):
     root = read_json(path)
     defaults = joint_training_config()
     if (root.get("format") != defaults["format"] or type(root.get("version")) is not int or root["version"] != 1
-            or root.keys()-defaults.keys()):
+            or root.keys()-(defaults.keys() | {"r2_streaming"})):
         raise ValueError("Invalid or unknown joint training options; use train-joint.json, not the historical plan")
     config = dict(defaults,**root)
     if not isinstance(config["data_root"],str) or not config["data_root"]:
         raise ValueError("Joint training needs data_root")
     config["data_root"] = str((path.parent/config["data_root"]).resolve())
+    if "r2_streaming" in config:
+        streaming = config["r2_streaming"]
+        if (not isinstance(streaming, dict) or set(streaming)-{"source", "layout", "spool_directory"}
+                or not isinstance(streaming.get("source"), str)
+                or streaming.get("layout", "v5") not in ("v5", "inline")):
+            raise ValueError("r2_streaming needs source r2://BUCKET/PREFIX and layout v5 or inline")
+        from .r2_archive import R2SceneArchiver
+        streaming["source"] = R2SceneArchiver(Path(config["data_root"]), streaming["source"]).destination
+        streaming.setdefault("layout", "v5")
+        if "spool_directory" in streaming:
+            if not isinstance(streaming["spool_directory"], str) or not streaming["spool_directory"]:
+                raise ValueError("R2 spool_directory must be a nonempty local path")
+            streaming["spool_directory"] = str((path.parent/streaming["spool_directory"]).resolve())
     for key in ("epochs","batch_size","patch_size","patches_per_window","window_length",
                 "validation_patch_size","validation_crops_per_window","cpu_threads"):
         if type(config[key]) is not int or config[key] < 1:
@@ -90,18 +103,27 @@ def evaluate_joint(model,dataset,device):
     return {**{k:v/len(dataset) for k,v in totals.items()},"replayed_paths":paths,"replayed_pixels":pixels}
 
 
-def _train_joint(config,output,device_name="auto",*,resume=None):
+def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=None):
     output = Path(output)
     if output.exists():
         raise FileExistsError(f"Joint training output already exists: {output}")
     descriptor = read_v5_dataset(config["data_root"])
     selected = {p:config[p+"_groups"] or descriptor["partitions"][p] for p in ("train","validation")}
-    provenance = joint_inventory(config["data_root"],selected)
+    provenance = joint_inventory(config["data_root"],selected,verify_images=frame_source is None)
+    if frame_source is not None:
+        from .r2_streaming import SOURCE_RECORD
+        from .dataset_generation import digest
+        source_record = Path(config["data_root"])/SOURCE_RECORD
+        if provenance != read_json(source_record)["inventory"]:
+            raise ValueError("R2 metadata inventory/selections changed; prepare a new snapshot")
+        provenance["r2_snapshot_sha256"] = digest(source_record)
+        provenance["image_verification"] = "sha256_on_every_download"
     train = JointPatchDataset(config["data_root"],partition="train",sequence_ids=selected["train"],
-        length=config["window_length"],patch_size=config["patch_size"],patches_per_window=config["patches_per_window"])
+        length=config["window_length"],patch_size=config["patch_size"],patches_per_window=config["patches_per_window"],
+        frame_source=frame_source)
     validation = JointPatchDataset(config["data_root"],partition="validation",sequence_ids=selected["validation"],
         length=config["window_length"],patch_size=config["validation_patch_size"],
-        patches_per_window=config["validation_crops_per_window"],augment=False)
+        patches_per_window=config["validation_crops_per_window"],augment=False,frame_source=frame_source)
     device = select_device(device_name)
     torch.set_num_threads(config["cpu_threads"])
     random.seed(config["seed"]); np.random.seed(config["seed"]); torch.manual_seed(config["seed"])
@@ -180,6 +202,8 @@ def _train_joint(config,output,device_name="auto",*,resume=None):
         "best_validation":best,"initial_validation":initial,"checkpoint":"model.pt","resume_checkpoint":"last.pt",
         "resumed_from":str(resume) if resume else None,"selection_scope":"this_run_including_initial_model",
         "config":config,"test_pixels_loaded":False}
+    if frame_source is not None:
+        summary["r2_streaming"] = dict(frame_source.stats)
     (output/"summary.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
     return summary
 
@@ -198,8 +222,13 @@ def train_joint(config_path,output,device_name="auto",*,resume=None):
     cudnn = torch.backends.cudnn.deterministic,torch.backends.cudnn.benchmark
     try:
         with joint_dataset_read_lock(config["data_root"]):
+            frame_source = None
+            if "r2_streaming" in config:
+                from .r2_streaming import R2FrameSource
+                frame_source = R2FrameSource(config["data_root"], **config["r2_streaming"])
+                frame_source.preflight()
             torch.use_deterministic_algorithms(True)
-            return _train_joint(config,output,device_name,resume=resume)
+            return _train_joint(config,output,device_name,resume=resume,frame_source=frame_source)
     finally:
         torch.use_deterministic_algorithms(enabled,warn_only=warn)
         torch.backends.cudnn.deterministic,torch.backends.cudnn.benchmark = cudnn
