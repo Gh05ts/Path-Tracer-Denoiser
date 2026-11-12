@@ -43,12 +43,22 @@ This generator resumes capture; it does not perform those deferred backfills.
 ## Prepare and initialize on the primary machine
 
 Commands below run from `Path-Tracer-Denoiser/` using a Python 3.10+ environment
-with this checkout installed (`pip install -e .`). The primary environment is
-currently `/tmp/ntasad-venv/bin/python`. Preparation is local and does not start
-rendering or upload anything:
+with this checkout installed (`python3 -m pip install -e .`). Activate that
+environment first; the commands below use `python3`. The primary machine's
+system `/usr/bin/python3` is Python 3.6 and cannot run this project. Its existing
+Python 3.11 environment can be activated with:
 
 ```bash
-python distributed/generate.py prepare \
+source /tmp/ntasad-venv/bin/activate
+python3 --version
+```
+
+Run this in each new shell before using the commands below. On the second
+machine, activate its own Python 3.10+ environment. Preparation is local and
+does not start rendering or upload anything:
+
+```bash
+python3 distributed/generate.py prepare \
   --output ../dataset/denoiser-v4 \
   --workspace .. \
   --prepared ../dataset/denoiser-v4/distributed/prepared \
@@ -59,7 +69,7 @@ Initialize once, after checking the preparation. This verifies existing archived
 BMW objects and uploads the frozen metadata/queue, but starts no workers:
 
 ```bash
-python distributed/generate.py init \
+python3 distributed/generate.py init \
   --prepared ../dataset/denoiser-v4/distributed/prepared \
   --output ../dataset/denoiser-v4 \
   --destination r2://denoiser/denoiser-v4 \
@@ -90,22 +100,31 @@ Provide `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and optional
 executing the launcher. Environment values take precedence. Credentials and
 launcher scripts are never included in the shared metadata bundle.
 
-Check a machine without claiming/rendering a task:
+Check a machine without claiming/rendering a task. This example reads the local
+launcher's credential constants; omit `--settings-file` if credentials are
+already exported in the environment:
 
 ```bash
-python distributed/generate.py check \
+python3 distributed/generate.py check \
   --destination r2://denoiser/denoiser-v4 \
+  --settings-file tools/generate_r2_dataset.py \
   --output ../dataset/denoiser-v4 \
   --workspace .. \
   --renderer ../dataset/bin/dataset_capture-base-integrator12
 ```
 
-## Start workers when ready
+## Start workers so they survive SSH disconnects
 
-Primary machine, using its original dataset directory:
+Use the background launcher for long-running generation. It uses `nohup` and,
+when available, `setsid`, prints the worker PID and log path, and returns to the
+shell. Once it has started, you can close the terminal or disconnect SSH; the
+worker keeps running. A host shutdown or reboot still stops it.
+
+Primary machine, using its original dataset directory and Python 3.11 environment:
 
 ```bash
-python distributed/generate.py worker \
+DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
+  bash tools/run_dataset_background.sh distributed worker \
   --destination r2://denoiser/denoiser-v4 \
   --settings-file tools/generate_r2_dataset.py \
   --worker-id 3090-a --workspace .. \
@@ -113,10 +132,12 @@ python distributed/generate.py worker \
   --renderer ../dataset/bin/dataset_capture-base-integrator12
 ```
 
-Second machine, with its own local output directory and environment credentials:
+Second machine, with its own local output directory and environment credentials.
+Activate its Python 3.10+ environment first, so `python3` selects that environment:
 
 ```bash
-python distributed/generate.py worker \
+DATASET_PYTHON=python3 \
+  bash tools/run_dataset_background.sh distributed worker \
   --destination r2://denoiser/denoiser-v4 \
   --worker-id 3090-b --workspace .. \
   --output ../dataset/denoiser-v4 \
@@ -130,17 +151,22 @@ Rerun the same worker command to resume interrupted tasks and reuse verified
 completed frames, layers, decoded files and previously uploaded objects.
 `--max-clips 1` limits a worker to one task for an initial production check.
 
-To detach, use the existing log/PID launcher:
+Watch progress using the exact log path printed by the launcher:
 
 ```bash
-DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
-  bash tools/run_dataset_background.sh distributed worker \
-  --destination r2://denoiser/denoiser-v4 \
-  --settings-file tools/generate_r2_dataset.py \
-  --worker-id 3090-a --workspace .. \
-  --output ../dataset/denoiser-v4 \
-  --renderer ../dataset/bin/dataset_capture-base-integrator12
+tail -f /path/printed/by/launcher.log
 ```
+
+**Ctrl+C while running `tail -f` stops only the log viewer. The detached worker
+continues.** Logs and PID files are stored in `../dataset/jobs/`. Check the log
+after launching to confirm the worker started successfully.
+
+If you already started `python3 distributed/generate.py worker ...` directly,
+it is running in the foreground: Ctrl+C stops it, and an SSH disconnect may stop
+it too. To switch to the background launcher, press Ctrl+C, wait until the old
+worker and its render/decode processes have exited, then use the matching command
+above with the same worker ID and output directory. Verified progress and its
+existing claim are reused. Run only one worker per local output directory.
 
 Workers exit when no eligible pending or locally owned task remains. Clips
 owned by another machine remain claimed; they are not timed out and rerendered.
@@ -148,7 +174,7 @@ owned by another machine remain claimed; they are not timed out and rerendered.
 ## Status and recovery
 
 ```bash
-python distributed/generate.py status \
+python3 distributed/generate.py status \
   --destination r2://denoiser/denoiser-v4 \
   --settings-file tools/generate_r2_dataset.py
 ```
@@ -159,7 +185,7 @@ claim must instead be released, first stop that worker and its background
 process, then explicitly release the current token:
 
 ```bash
-python distributed/generate.py release \
+python3 distributed/generate.py release \
   --destination r2://denoiser/denoiser-v4 \
   --group CLIP_ID --claim-token TOKEN_FROM_STATUS
 ```
