@@ -83,10 +83,119 @@ it. Do not run the old sequential resume alongside distributed workers.
 ## Set up the second RTX 3090 machine
 
 Copy both updated repositories and the complete scene assets, preserving their
-relative directory layout. Copy the exact persistent renderer binary
+relative directory layout **and checkout directory names**. The frozen v4 plan
+expects this layout beneath `--workspace` (the workspace's absolute path may
+differ between machines):
+
+```text
+WORKSPACE/
+  Path-Tracer-Denoiser/
+    dataset_generation/scenes/bathroom.json
+    ...
+  Wavefront-Path-Tracer/
+    assets/...
+  dataset/
+    bin/dataset_capture-base-integrator12
+    denoiser-v4/
+```
+
+If the second denoiser checkout is named `denoiser`, rename it to
+`Path-Tracer-Denoiser` before running `check` or `worker`. For example, from the
+second machine:
+
+```bash
+cd /home/myid/lv37348/pt
+mv -T -n denoiser Path-Tracer-Denoiser
+cd Path-Tracer-Denoiser
+```
+
+The destination must not already contain another checkout. Use the same sibling
+name `Wavefront-Path-Tracer` for the renderer repository. Changing `--workspace`
+rebases the workspace root; it does not translate checkout names.
+
+Fetch and prepare the asset submodules using the renderer's setup script. Use
+Python 3.11+ for this step: the primary's Pillow 13 conversion environment requires
+it, even though the distributed generator itself supports Python 3.10. From the
+renderer checkout on the second machine:
+
+```bash
+cd /home/myid/lv37348/pt/Wavefront-Path-Tracer
+git pull --ff-only
+python3.11 -m venv ../dataset/asset-venv
+../dataset/asset-venv/bin/python3 -m pip install Pillow==13.0.0
+../dataset/asset-venv/bin/python3 tools/setup_assets.py
+../dataset/asset-venv/bin/python3 tools/setup_assets.py --verify-only
+```
+
+If installing Pillow 13 reports "No matching distribution", first check the
+actual environment interpreter with `../dataset/asset-venv/bin/python3 --version`.
+It must report Python 3.11 or newer; an existing Python 3.10 environment cannot
+install this version. Create a separate environment with `python3.11 -m venv
+../dataset/asset-venv311` if necessary and use that environment's interpreter.
+With a compatible interpreter, update pip and try the public package index:
+
+```bash
+../dataset/asset-venv/bin/python3 -m pip install --upgrade pip
+../dataset/asset-venv/bin/python3 -m pip install --index-url https://pypi.org/simple Pillow==13.0.0
+```
+
+The setup script initializes both pinned asset submodules, fetches the selected
+research-scene LFS payloads, converts Bistro's DDS textures to PNG, and creates
+`assets/scenes/bistro-lighting.gltf`. The research scenes already supply glTF/GLB
+files. Git LFS installation and a separate conversion command are not required.
+Preparation needs internet access and several GB of free space. Rerun the same
+setup command after an interruption; valid files are reused. The later distributed
+`check` verifies the resulting bytes against the actual frozen v4 plan.
+
+Copy the exact persistent renderer binary
 `dataset/bin/dataset_capture-base-integrator12`. Install compatible CUDA/runtime
 libraries and the same Python/OpenEXR versions. A rebuilt executable with a
 different SHA-256 is rejected, even if its source appears identical.
+
+The renderer binary lives outside the Git repositories, so cloning/pulling them
+does not copy it. From the denoiser checkout on the second machine, replace
+`PRIMARY_SSH` with the primary machine's SSH login (such as `USER@HOST`) or configured SSH alias:
+
+```bash
+mkdir -p ../dataset/bin
+scp PRIMARY_SSH:/home/myid/lv37348/new/dataset/bin/dataset_capture-base-integrator12 \
+  ../dataset/bin/dataset_capture-base-integrator12
+chmod +x ../dataset/bin/dataset_capture-base-integrator12
+```
+
+If you already copied that exact binary elsewhere, pass its actual path through
+`--renderer` in both `check` and `worker`. For example, a checkout at
+`/home/myid/lv37348/pt/Path-Tracer-Denoiser` resolves the documented relative renderer path to
+`/home/myid/lv37348/pt/dataset/bin/dataset_capture-base-integrator12`.
+
+The copied binary also needs its shared libraries; a renderer built locally may
+use different library versions. Check on the second machine:
+
+```bash
+ldd ../dataset/bin/dataset_capture-base-integrator12
+```
+
+For the current secondary host, the missing libraries are `libcudart.so.13`,
+`libcrypto.so.1.1`, and `libIlmImf-2_5.so.26`. A verified copy of those three
+primary-host files is packaged at
+`/home/myid/lv37348/new/dataset/bin/capture-runtime.tar.gz` (about 2.53 MB
+compressed / 7.14 MB extracted). From the second denoiser checkout:
+
+```bash
+scp PRIMARY_SSH:/home/myid/lv37348/new/dataset/bin/capture-runtime.tar.gz ../dataset/bin/
+tar -xzf ../dataset/bin/capture-runtime.tar.gz -C ../dataset/bin
+export LD_LIBRARY_PATH="/home/myid/lv37348/pt/dataset/bin/capture-runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+ldd ../dataset/bin/dataset_capture-base-integrator12
+```
+
+Replace `PRIMARY_SSH` with the primary's SSH login/alias and adjust the
+absolute library path if the workspace differs. The archive includes a SHA-256
+manifest. Confirm no libraries are reported as `not found`, then start/restart
+the background worker from this same shell. It inherits the library path and
+retains it across SSH disconnects. Repeat the export before future worker
+launches from a new shell. These libraries stay local to the dataset directory;
+no system CUDA installation or locked renderer binary is replaced. The GPU
+driver must support this CUDA 13 runtime.
 
 The workspace's absolute path may differ. The worker verifies the renderer and
 all referenced scene/geometry/texture bytes against v4. Only temporary runtime
@@ -132,17 +241,25 @@ DATASET_PYTHON=/tmp/ntasad-venv/bin/python \
   --renderer ../dataset/bin/dataset_capture-base-integrator12
 ```
 
-Second machine, with its own local output directory and environment credentials.
-Activate its Python 3.10+ environment first, so `python3` selects that environment:
+Second machine, with its own local output directory and local settings file.
+Activate its Python 3.10+ environment first, so `python3` selects that environment.
+If credentials are exported in its environment instead, omit `--settings-file`:
 
 ```bash
 DATASET_PYTHON=python3 \
   bash tools/run_dataset_background.sh distributed worker \
   --destination r2://denoiser/denoiser-v4 \
+  --settings-file tools/generate_r2_dataset.py \
   --worker-id 3090-b --workspace .. \
   --output ../dataset/denoiser-v4 \
   --renderer ../dataset/bin/dataset_capture-base-integrator12
 ```
+
+Pass `--settings-file` to each command that needs it. Running `status` or `check`
+with this flag does not export credentials for a later worker launch. The path
+above refers to `tools/generate_r2_dataset.py`, not a file of the same name in
+the checkout root. It must define nonempty literal `ACCESS_KEY_ID` and
+`SECRET_ACCESS_KEY` values, plus `ACCOUNT_ID` or `ENDPOINT_URL`.
 
 Use a unique, stable worker ID per machine. The output directory retains a
 machine UUID and a local filesystem lock, preventing another local worker or a
