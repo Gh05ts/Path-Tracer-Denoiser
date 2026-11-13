@@ -5,9 +5,9 @@ import sys
 
 from wavefront_denoiser.dataset_generation import main
 
-BUCKET_NAME = "Denoiser"
-KEY_ID = "00574fd95d23aff0000000001"
-APPLICATION_KEY = "K005pf1WjcLeYZbEFpliTxaIbNkpfOQ"
+BUCKET_NAME = ""
+KEY_ID = ""
+APPLICATION_KEY = ""
 
 os.environ["B2_APPLICATION_KEY_ID"] = KEY_ID
 os.environ["B2_APPLICATION_KEY"] = APPLICATION_KEY
