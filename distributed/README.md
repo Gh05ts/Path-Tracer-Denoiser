@@ -113,6 +113,26 @@ The destination must not already contain another checkout. Use the same sibling
 name `Wavefront-Path-Tracer` for the renderer repository. Changing `--workspace`
 rebases the workspace root; it does not translate checkout names.
 
+Create a generator environment on the second machine and install the project
+dependencies before starting a worker. Python 3.10+ is sufficient here. Upgrade
+pip and setuptools first so editable installation supports this project's build
+backend:
+
+```bash
+cd /home/myid/lv37348/pt/Path-Tracer-Denoiser
+python3 -m venv ../dataset/generator-venv
+source ../dataset/generator-venv/bin/activate
+python3 -m pip install --upgrade pip 'setuptools>=64' wheel
+python3 -m pip install -e .
+python3 -c "import sys, OpenEXR, numpy; print(sys.executable); print(OpenEXR.__version__)"
+```
+
+OpenEXR 3.3 satisfies the declared `>=3.2,<4` requirement. The asset preparation
+environment below only needs Pillow; creating it does not install the generator's
+Python dependencies. Keep using `generator-venv` for `check`, `status`, and worker
+launches. An error about a missing `build_editable` hook means the active packaging
+tools do not support editable installation; upgrade them in this environment.
+
 Fetch and prepare the asset submodules using the renderer's setup script. Use
 Python 3.11+ for this step: the primary's Pillow 13 conversion environment requires
 it, even though the distributed generator itself supports Python 3.10. From the
@@ -246,7 +266,7 @@ Activate its Python 3.10+ environment first, so `python3` selects that environme
 If credentials are exported in its environment instead, omit `--settings-file`:
 
 ```bash
-DATASET_PYTHON=python3 \
+DATASET_PYTHON="$(pwd)/../dataset/generator-venv/bin/python3" \
   bash tools/run_dataset_background.sh distributed worker \
   --destination r2://denoiser/denoiser-v4 \
   --settings-file tools/generate_r2_dataset.py \
