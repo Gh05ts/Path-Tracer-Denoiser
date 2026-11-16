@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
+from collections import OrderedDict
 from functools import lru_cache
 import json
 import multiprocessing
@@ -121,14 +122,72 @@ def verify_decoded_frame(output, group, index, *, verify_hashes=True, allow_miss
     return base, record
 
 
-def load_decoded_crop(output, group, index, *, top=0, left=0, size=None):
+class DecodedCropCache:
+    """Bounded maps/metadata for an inventory-verified, read-locked dataset.
+
+    Every hit stats all provenance and payload dependencies. Changes fail
+    closed; no refreshed metadata is silently adopted during a run. Array
+    hashes remain the responsibility of the initial full inventory audit.
+    One loading thread owns this cache; returned crops always own storage.
+    """
+
+    def __init__(self, capacity=16):
+        if type(capacity) is not int or capacity < 1:
+            raise ValueError("Need a positive decoded map cache capacity")
+        self.capacity = capacity
+        self.entries = OrderedDict()
+        self.seen = {}
+
+    def load(self, output, group, index):
+        output = Path(output)
+        relative = Path(group) / f"frame_{index:06d}"
+        directory = output / "decoded" / relative
+        paths = [output / name for name in (LOCK_NAME, "capture_lock.json", "sample_layers_lock.json")]
+        paths += [output / relative / "manifest.json",
+                  output / "sample_layers" / relative / "manifest.json", directory / "manifest.json"]
+        paths += [directory / name for name in ARRAYS]
+        def stamp():
+            stats = [path.stat() for path in paths]
+            return tuple((s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns) for s in stats)
+        identity = (str(output.resolve()), group, index)
+        before = stamp()
+        if identity in self.seen and self.seen[identity] != before:
+            raise FrameFormatError("Decoded cache files changed during training")
+        if identity in self.entries:
+            previous, base, floats, uints = self.entries[identity]
+            if previous != before:
+                raise FrameFormatError("Decoded cache files changed during training")
+            self.entries.move_to_end(identity)
+            return base, floats, uints
+        base, _ = verify_decoded_frame(output, group, index, verify_hashes=False)
+        floats = np.load(directory / "float.npy", mmap_mode="r", allow_pickle=False)
+        uints = np.load(directory / "uint.npy", mmap_mode="r", allow_pickle=False)
+        if stamp() != before:
+            raise FrameFormatError("Decoded cache files changed while opening maps")
+        self.entries[identity] = before, base, floats, uints
+        # Keep small identity stamps for all accessed frames, including evicted
+        # maps, so eviction cannot hide subsequent same-size byte changes.
+        self.seen[identity] = before
+        if len(self.entries) > self.capacity:
+            self.entries.popitem(last=False)
+        return base, floats, uints
+
+    def close(self):
+        self.entries.clear()
+        self.seen.clear()
+
+
+def load_decoded_crop(output, group, index, *, top=0, left=0, size=None, cache=None):
     """Read only the requested pixels from read-only memory maps.
 
     Call verify_decoded_frame with hashes at dataset inventory time. This path
     checks metadata and array headers, but does not hash or decode whole images.
     """
     output = Path(output)
-    base, _ = verify_decoded_frame(output, group, index, verify_hashes=False)
+    if cache is None:
+        base, _ = verify_decoded_frame(output, group, index, verify_hashes=False)
+    else:
+        base, floats, uints = cache.load(output, group, index)
     h, w = base["height"], base["width"]
     if size is None:
         height, width = h, w
@@ -139,8 +198,9 @@ def load_decoded_crop(output, group, index, *, top=0, left=0, size=None):
             or top + height > h or left + width > w):
         raise ValueError("Invalid decoded cache crop")
     directory = output / "decoded" / group / f"frame_{index:06d}"
-    floats = np.load(directory / "float.npy", mmap_mode="r", allow_pickle=False)
-    uints = np.load(directory / "uint.npy", mmap_mode="r", allow_pickle=False)
+    if cache is None:
+        floats = np.load(directory / "float.npy", mmap_mode="r", allow_pickle=False)
+        uints = np.load(directory / "uint.npy", mmap_mode="r", allow_pickle=False)
     cropped_float = floats[top:top+height, left:left+width]
     cropped_uint = uints[top:top+height, left:left+width]
     buffers = {}

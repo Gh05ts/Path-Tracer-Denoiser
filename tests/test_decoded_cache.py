@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 import shutil
+import itertools
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -16,9 +18,41 @@ from test_r2_native import r2_api
 from wavefront_denoiser.b2_archive import B2SceneArchiver
 from wavefront_denoiser.dataset_generation import digest, run_captures, write_json
 from wavefront_denoiser.decoded_cache import (
-    BackgroundDecodedCache, decode_frame, load_decoded_crop, verify_decoded_frame,
+    BackgroundDecodedCache, DecodedCropCache, decode_frame, load_decoded_crop, verify_decoded_frame,
 )
 from wavefront_denoiser.frames import FrameFormatError, load_frame, read_manifest
+
+
+def test_direct_crop_all_augmentations_own_storage_and_match_legacy(cache_data):
+    import torch
+    from wavefront_denoiser.joint_data import JointPatchDataset
+    output,_,_,_=cache_data
+    for i in range(2):
+        decode_frame(output,'new',i)
+    # This fixture has two decoded frames; exercise the frame-assembly path
+    # directly. Public datasets still require at least three temporal frames.
+    dataset=JointPatchDataset.__new__(JointPatchDataset)
+    dataset.sequences=SimpleNamespace(root=output,windows=[('new',0,2)])
+    dataset.patch_size=4;dataset.patches_per_window=1
+    dataset.storage='decoded';dataset.frame_source=None
+    dataset.crop_cache=DecodedCropCache()
+    before={p:digest(p) for p in (output/'decoded').rglob('*.npy')}
+    for fx,fy,r in itertools.product((False,True),(False,True),range(4)):
+        plan=(0,1,1,fx,fy,r)
+        dataset.fast_crops=False
+        expected=dataset.load_plan(plan)
+        dataset.fast_crops=True
+        actual=dataset.load_plan(plan)
+        for key,value in expected['buffers'].items():
+            torch.testing.assert_close(value,actual['buffers'][key],rtol=0,atol=0)
+            assert actual['buffers'][key].is_contiguous()
+        torch.testing.assert_close(expected['layers'],actual['layers'],rtol=0,atol=0)
+        actual['layers'].fill_(0)
+        actual['buffers']['radiance'].fill_(0)
+        again=dataset.load_plan(plan)
+        torch.testing.assert_close(expected['layers'],again['layers'],rtol=0,atol=0)
+    assert {p:digest(p) for p in before}==before
+    dataset.close()
 
 
 @pytest.fixture
@@ -66,6 +100,53 @@ def test_lossless_crop_reads_without_exrs_or_full_array_hashes(cache_data, monke
     frame.buffers["radiance"].fill(0)
     again, _ = load_decoded_crop(output, "new", 1, top=2, left=1, size=4)
     np.testing.assert_array_equal(again.buffers["radiance"], source.buffers["radiance"][2:6, 1:5])
+
+
+def test_map_reuse_owns_crops_and_eviction_preserves_mutation_detection(cache_data, monkeypatch):
+    output, _, _, _ = cache_data
+    for i in range(2):
+        decode_frame(output, "new", i)
+    cache = DecodedCropCache(capacity=1)
+    baseline, baseline_layers = load_decoded_crop(output,"new",0,top=1,left=1,size=4)
+    frame,layers = load_decoded_crop(output,"new",0,top=1,left=1,size=4,cache=cache)
+    for key in baseline.buffers:
+        np.testing.assert_array_equal(frame.buffers[key],baseline.buffers[key])
+    np.testing.assert_array_equal(layers,baseline_layers)
+    frame.buffers['radiance'].fill(0)
+    layers.fill(0)
+    from wavefront_denoiser import decoded_cache
+    original_load = np.load
+    monkeypatch.setattr(decoded_cache.np,"load",lambda *a,**k: pytest.fail("Reopened a cached map"))
+    again,again_layers = load_decoded_crop(output,"new",0,top=1,left=1,size=4,cache=cache)
+    np.testing.assert_array_equal(again.buffers['radiance'],baseline.buffers['radiance'])
+    np.testing.assert_array_equal(again_layers,baseline_layers)
+    monkeypatch.setattr(decoded_cache.np,"load",original_load)
+    load_decoded_crop(output,"new",1,size=4,cache=cache)
+    assert len(cache.entries)==1
+    path = output/'decoded/new/frame_000000/float.npy'
+    mapped = np.load(path,mmap_mode='r+')
+    mapped[0,0,0] += 1
+    mapped.flush()
+    del mapped
+    with pytest.raises(FrameFormatError,match='changed during training'):
+        load_decoded_crop(output,"new",0,size=4,cache=cache)
+    cache.close()
+    assert not cache.entries and not cache.seen
+
+
+@pytest.mark.parametrize('relative', ['capture_lock.json','sample_layers_lock.json',
+    'decoded_cache_lock.json','new/frame_000000/manifest.json',
+    'sample_layers/new/frame_000000/manifest.json','decoded/new/frame_000000/manifest.json',
+    'decoded/new/frame_000000/uint.npy'])
+def test_cached_crop_rejects_changed_dependencies(cache_data,relative):
+    output, _, _, _ = cache_data
+    decode_frame(output,'new',0)
+    cache = DecodedCropCache()
+    load_decoded_crop(output,'new',0,size=4,cache=cache)
+    path = output/relative
+    path.write_bytes(path.read_bytes()+b' ')
+    with pytest.raises(FrameFormatError,match='changed during training'):
+        load_decoded_crop(output,'new',0,size=4,cache=cache)
 
 
 def test_spawned_decoder_and_resume_preserve_source_bytes(cache_data):
@@ -255,3 +336,21 @@ def test_joint_training_uses_identical_crops_with_only_cache_and_metadata(joint_
     config, _ = config_for(output)
     summary = train_joint(config, tmp_path / "cache-training", "cpu")
     assert summary["completed_epochs"] == 2 and summary["global_step"] == 8
+    from wavefront_denoiser.joint_checkpoint import load_joint_checkpoint
+    settings=json.loads(config.read_text())
+    settings.update(loader_policy='prefetch_fused_v1',decoded_cache_frames=32,prefetch_batches=4)
+    config.write_text(json.dumps(settings))
+    train_joint(config,tmp_path/'direct-full','cpu')
+    settings['epochs']=1
+    config.write_text(json.dumps(settings))
+    train_joint(config,tmp_path/'direct-first','cpu')
+    settings['epochs']=2
+    config.write_text(json.dumps(settings))
+    train_joint(config,tmp_path/'direct-resumed','cpu',resume=tmp_path/'direct-first/last.pt')
+    expected,old_payload=load_joint_checkpoint(tmp_path/'cache-training/last.pt')
+    for name in ('direct-full','direct-resumed'):
+        actual,payload=load_joint_checkpoint(tmp_path/name/'last.pt')
+        for key,value in expected.state_dict().items():
+            torch.testing.assert_close(value,actual.state_dict()[key],rtol=0,atol=0)
+        for key in ('torch','generator'):
+            assert torch.equal(old_payload['training']['rng'][key],payload['training']['rng'][key])
