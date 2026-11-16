@@ -15,7 +15,7 @@ from .sequence_data import transform_window
 
 class JointPatchDataset(torch.utils.data.Dataset):
     def __init__(self, root, *, partition, length=5, patch_size=128, patches_per_window=1, augment=True,
-                 sequence_ids=None, frame_source=None):
+                 sequence_ids=None, frame_source=None, cache_maps=False, cache_frames=16, fast_crops=False):
         if (type(patch_size) is not int or patch_size < 1 or type(patches_per_window) is not int
                 or patches_per_window < 1 or type(length) is not int or length < 3 or type(augment) is not bool):
             raise ValueError("Need positive joint crop/count and at least three frames")
@@ -31,11 +31,22 @@ class JointPatchDataset(torch.utils.data.Dataset):
                 raise ValueError("Joint patch size exceeds source dimensions")
         self.patch_size,self.patches_per_window,self.augment = patch_size,patches_per_window,augment
         self.frame_source = frame_source
+        self.fast_crops = fast_crops
+        from .decoded_cache import DecodedCropCache
+        self.crop_cache = DecodedCropCache(cache_frames) if (cache_maps or fast_crops) and self.storage == "decoded" else None
+
+    def close(self):
+        if self.crop_cache is not None:
+            self.crop_cache.close()
 
     def __len__(self):
         return len(self.sequences)*self.patches_per_window
 
     def __getitem__(self,index):
+        return self.load_plan(self.plan(index))
+
+    def plan(self,index):
+        """Choose all randomness on the caller thread, never the loading thread."""
         group,start,length = self.sequences.windows[index//self.patches_per_window]
         config = self.descriptor["groups"][group]["source_config"]
         h,w,size = config["height"],config["width"],self.patch_size
@@ -44,13 +55,24 @@ class JointPatchDataset(torch.utils.data.Dataset):
         else:
             origins = [((h-size)//2,(w-size)//2),(0,0),(0,w-size),(h-size,0),(h-size,w-size)]
             top,left = origins[index%self.patches_per_window]
+        return (index, top, left,
+                bool(torch.randint(2,(1,))) if self.augment else False,
+                bool(torch.randint(2,(1,))) if self.augment else False,
+                int(torch.randint(4,(1,))) if self.augment else 0)
+
+    def load_plan(self,plan):
+        if self.fast_crops and self.storage == 'decoded' and self.frame_source is None:
+            return self._load_direct_crop(plan)
+        index,top,left,flip_x,flip_y,rotations = plan
+        group,start,length = self.sequences.windows[index//self.patches_per_window]
+        size = self.patch_size
         values,layers = [],[]
         for frame_index in range(start,start+length):
             if self.storage == "decoded":
                 from .decoded_cache import load_decoded_crop
                 if self.frame_source is None:
                     frame, layer = load_decoded_crop(self.sequences.root, group, frame_index,
-                                                     top=top, left=left, size=size)
+                                                     top=top, left=left, size=size, cache=self.crop_cache)
                 else:
                     frame, layer = self.frame_source.load_crop(group, frame_index, top=top, left=left, size=size)
                 values.append(frame.as_tensors())
@@ -68,12 +90,50 @@ class JointPatchDataset(torch.utils.data.Dataset):
         buffers = {key:torch.stack([v[key] for v in values]) for key in values[0]}
         buffers["sample_layers"] = torch.stack(layers).flatten(1,2)
         transformed = transform_window(buffers,top=0,left=0,size=size,
-            flip_x=bool(torch.randint(2,(1,))) if self.augment else False,
-            flip_y=bool(torch.randint(2,(1,))) if self.augment else False,
-            rotations=int(torch.randint(4,(1,))) if self.augment else 0)
+            flip_x=flip_x,flip_y=flip_y,rotations=rotations)
         layers = transformed.pop("sample_layers").reshape(length,6,3,size,size)
         return {"buffers":transformed,"layers":layers,"sequence_id":group,
                 "frame_indices":list(range(start,start+length))}
+
+    def _load_direct_crop(self,plan):
+        """Copy mapped HWC views directly into final, augmented TCHW storage."""
+        from .decoded_cache import FLOAT_NAMES, UINT_NAMES
+        from .frames import CHANNELS, COUNT_BUFFERS
+        from .sample_layers import LAYER_SPP
+        from .sequence_data import finish_window_transform
+        index,top,left,flip_x,flip_y,rotations = plan
+        group,start,length = self.sequences.windows[index//self.patches_per_window]
+        size = self.patch_size
+        if any(type(v) is not int for v in (top,left,size)) or min(top,left)<0 or size<1:
+            raise ValueError('Invalid decoded cache crop')
+        buffers = {key:torch.empty((length,len(channels),size,size),
+            dtype=torch.int64 if key in COUNT_BUFFERS else torch.float32) for key,channels in CHANNELS.items()}
+        layers = torch.empty((length,6,3,size,size),dtype=torch.float32)
+        destinations = {key:value.numpy() for key,value in buffers.items()}
+        layer_destination = layers.numpy()
+        def spatial(view):
+            if flip_x:
+                view = view[:,::-1]
+            if flip_y:
+                view = view[::-1]
+            return np.rot90(view,rotations%4,axes=(0,1)).transpose(2,0,1)
+        for t,frame_index in enumerate(range(start,start+length)):
+            base,floats,uints = self.crop_cache.load(self.sequences.root,group,frame_index)
+            if top+size>base['height'] or left+size>base['width']:
+                raise ValueError('Invalid decoded cache crop')
+            floats = floats[top:top+size,left:left+size]
+            uints = uints[top:top+size,left:left+size]
+            for key,channels in CHANNELS.items():
+                names,source = (UINT_NAMES,uints) if key in COUNT_BUFFERS else (FLOAT_NAMES,floats)
+                offset = names.index(channels[0])
+                np.copyto(destinations[key][t],spatial(source[...,offset:offset+len(channels)]),casting='safe')
+            for layer,spp in enumerate(LAYER_SPP):
+                channel = 'radiance.R' if spp==4 else f'spp_{spp}.R'
+                offset = FLOAT_NAMES.index(channel)
+                np.copyto(layer_destination[t,layer],spatial(floats[...,offset:offset+3]))
+        buffers = finish_window_transform(buffers,flip_x=flip_x,flip_y=flip_y,rotations=rotations,size=size)
+        return {'buffers':buffers,'layers':layers,'sequence_id':group,
+                'frame_indices':list(range(start,start+length))}
 
 
 def joint_inventory(root, selections=None, *, verify_images=True):

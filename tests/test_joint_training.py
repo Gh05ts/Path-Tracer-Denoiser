@@ -17,7 +17,7 @@ from wavefront_denoiser.dataset_generation import digest
 from wavefront_denoiser.joint import JointNTASAD
 from wavefront_denoiser.joint_checkpoint import load_joint_checkpoint
 from wavefront_denoiser.joint_data import JointPatchDataset, joint_inventory
-from wavefront_denoiser.joint_training import train_joint
+from wavefront_denoiser.joint_training import train_joint, evaluate_joint, training_config, _batch
 from wavefront_denoiser.training_defaults import joint_training_config
 from wavefront_denoiser.cli import main
 
@@ -92,9 +92,16 @@ def test_joint_crops_keep_layer4_and_guides_aligned(joint_dataset):
     assert torch.equal(state,torch.get_rng_state())
 
 
-@pytest.mark.parametrize("gradient_floor", [None,1e-6])
-def test_two_epochs_equal_one_epoch_plus_resume_cpu(joint_dataset,tmp_path,gradient_floor):
+@pytest.mark.parametrize("gradient_floor,validation_batch", [(None,None),(1e-6,None),(1e-6,3)])
+@pytest.mark.parametrize("loader_policy", [None,"cached_v1","prefetch_v1","prefetch-wide"])
+def test_two_epochs_equal_one_epoch_plus_resume_cpu(joint_dataset,tmp_path,gradient_floor,validation_batch,loader_policy):
     options = {} if gradient_floor is None else {"radiance_gradient_floor":gradient_floor}
+    if loader_policy == 'prefetch-wide':
+        options.update(loader_policy='prefetch_v1',decoded_cache_frames=32,prefetch_batches=4)
+    elif loader_policy is not None:
+        options["loader_policy"] = loader_policy
+    if validation_batch is not None:
+        options["validation_batch_size"] = validation_batch
     path,config = config_for(joint_dataset,**options)
     full = train_joint(path,tmp_path/"full","cpu")
     config["epochs"] = 1
@@ -224,3 +231,53 @@ def test_joint_evaluation_prediction_is_reference_free(joint_dataset):
         second = model.forward_sequence(dict(buffers,reference=torch.full_like(buffers["reference"],float("nan"))),layers)
     torch.testing.assert_close(first.radiance,second.radiance,rtol=0,atol=0)
     assert first.counts.max() <= 63
+
+
+def test_batched_validation_matches_individual_windows_and_partial_batch(joint_dataset):
+    torch.set_num_threads(1)
+    torch.manual_seed(17)
+    # Three distinct windows leave a partial final batch at size two. This
+    # catches weighting by number of batches instead of number of windows.
+    dataset = torch.utils.data.Subset(JointPatchDataset(joint_dataset,
+        partition="validation",patch_size=5,patches_per_window=1,augment=False), [0,1,3])
+    model = JointNTASAD(4,4).eval()
+    state = torch.get_rng_state().clone()
+    single = evaluate_joint(model,dataset,"cpu")
+    for size in (2,4):
+        batched = evaluate_joint(model,dataset,"cpu",batch_size=size)
+        for key,value in single.items():
+            if key in ("replayed_paths","replayed_pixels"):
+                assert batched[key] == value
+            else:
+                assert batched[key] == pytest.approx(value,rel=2e-5,abs=2e-7)
+    assert torch.equal(state,torch.get_rng_state())
+    batch = next(iter(torch.utils.data.DataLoader(dataset,batch_size=3)))
+    buffers,layers,_ = _batch(batch,"cpu")
+    assert "reference" not in buffers
+    with torch.inference_mode():
+        together = model.forward_sequence(buffers,layers,transformed=True)
+        for i in range(3):
+            separate = model.forward_sequence({k:v[i:i+1] for k,v in buffers.items()},layers[i:i+1],transformed=True)
+            torch.testing.assert_close(together.radiance[i:i+1],separate.radiance,rtol=2e-5,atol=2e-7)
+            assert torch.equal(together.valid[i:i+1],separate.valid)
+            assert torch.equal(together.counts[i:i+1],separate.counts)
+
+
+@pytest.mark.parametrize("value", [0,-1,True,1.5,"4"])
+def test_validation_batch_option_rejects_invalid_values(tmp_path,value):
+    config = joint_training_config()
+    config["validation_batch_size"] = value
+    path = tmp_path/"config.json"
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError,match="validation_batch_size"):
+        training_config(path)
+
+
+def test_resume_rejects_changed_validation_batch(joint_dataset,tmp_path):
+    path,config = config_for(joint_dataset,epochs=1,validation_batch_size=2)
+    train_joint(path,tmp_path/"first","cpu")
+    config.update(epochs=2,validation_batch_size=3)
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError,match="configuration"):
+        train_joint(path,tmp_path/"changed-batch","cpu",resume=tmp_path/"first/last.pt")
+    assert not (tmp_path/"changed-batch").exists()

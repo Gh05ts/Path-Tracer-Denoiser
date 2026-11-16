@@ -21,7 +21,9 @@ def make_report(run):
         f"- Networks: sampler {config['sampler_channels']} channels; denoiser {config['denoiser_channels']} channels",
         f"- Radiance gradient floor: {config.get('radiance_gradient_floor',0)} (backward-only stabilization; forward values unchanged)",
         f"- Training: batch {config['batch_size']}; crop {config['patch_size']}; {config['window_length']} frames/window; {config['patches_per_window']} crops/window",
-        f"- Validation: crop {config['validation_patch_size']}; {config['validation_crops_per_window']} crops/window",
+        f"- Validation: batch {config.get('validation_batch_size',1)}; crop {config['validation_patch_size']}; {config['validation_crops_per_window']} crops/window",
+        f"- Validation schedule: initial; first {config.get('validation_warmup_epochs',0)} epochs; every {config.get('validation_every_epochs',1)} epochs; final",
+        f"- Resume checkpoint: every {config.get('checkpoint_every_epochs',1)} epochs and final; best model saved on validation improvement",
         f"- Completed epochs: {summary['completed_epochs']}; optimizer steps: {summary['global_step']}",
         f"- Total training invocation: {performance['total_seconds']/60:.2f} minutes",
         f"- Setup/inventory: {performance['setup_seconds']:.2f} seconds; initial validation: {performance['initial_validation_seconds']:.2f} seconds",
@@ -42,7 +44,8 @@ def make_report(run):
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for record in history:
         t, train, val = record["timing"], record["train"], record["validation"]
-        lines.append(f"| {record['epoch']} | {t['training_steps']} | {t['training_seconds']:.2f} | {t['training_data_seconds']:.2f} | {t['validation_seconds']:.2f} | {t['checkpoint_seconds']:.2f} | {t['epoch_seconds']:.2f} | {train['loss']:.6g} | {val['loss']:.6g} | {train['sampler_gradient_norm']:.6g} | {train['denoiser_gradient_norm']:.6g} |")
+        val_loss = 'not evaluated' if val is None else f"{val['loss']:.6g}"
+        lines.append(f"| {record['epoch']} | {t['training_steps']} | {t['training_seconds']:.2f} | {t['training_data_seconds']:.2f} | {t['validation_seconds']:.2f} | {t['checkpoint_seconds']:.2f} | {t['epoch_seconds']:.2f} | {train['loss']:.6g} | {val_loss} | {train['sampler_gradient_norm']:.6g} | {train['denoiser_gradient_norm']:.6g} |")
     last = history[-1]
     lines += ["", "## Allocation checks", ""]
     for partition in ("train", "validation"):
@@ -62,12 +65,25 @@ def make_report(run):
         val_windows = counts["validation"]*config["validation_crops_per_window"]
         stable = rows[1:] or rows
         train_per_step = statistics.mean(r["training_seconds"]/r["training_steps"] for r in stable)
-        val_per_window = statistics.mean(r["validation_seconds"]/r["validation_windows"] for r in stable)
-        estimated = train_steps*train_per_step+val_windows*val_per_window+statistics.mean(r["checkpoint_seconds"] for r in stable)
+        evaluated = [r for r in stable if r['validation_windows']] or [r for r in rows if r['validation_windows']]
+        val_per_window = sum(r['validation_seconds'] for r in evaluated)/sum(r['validation_windows'] for r in evaluated)
+        training_cost = train_steps*train_per_step
+        validation_cost = val_windows*val_per_window
+        from wavefront_denoiser.joint_training import validation_due,checkpoint_due
+        writes = sum(int(r.get('resume_checkpoint_saved',False))+int(r.get('best_checkpoint_saved',False)) for r in stable)
+        checkpoint_per_write = sum(r['checkpoint_seconds'] for r in stable)/writes if writes else 0.
+        best_rate = sum(r.get('best_checkpoint_saved',False) for r in stable)/len(evaluated)
+        def projected_seconds(epochs):
+            schedule = dict(config,epochs=epochs)
+            validations = sum(validation_due(e,schedule) for e in range(1,epochs+1))
+            checkpoints = sum(checkpoint_due(e,schedule) for e in range(1,epochs+1))
+            checkpoint_cost = (checkpoints+best_rate*validations)*checkpoint_per_write if writes else epochs*statistics.mean(r['checkpoint_seconds'] for r in stable)
+            return epochs*training_cost + validations*validation_cost + checkpoint_cost
+        estimated = projected_seconds(config['epochs'])/config['epochs']
         lines += ["", "## Full-dataset timing extrapolation", "",
             f"Uses epochs 2 onward when available: {train_steps} training batches and {val_windows} validation windows per full epoch.", "",
-            f"- Estimated full epoch: **{estimated/60:.2f} minutes**",
-            *[f"- {epochs} epochs: {epochs*estimated/3600:.2f} hours" for epochs in (100,300,1000)], "",
+            f"- Estimated full epoch (schedule average at {config['epochs']} epochs): **{estimated/60:.2f} minutes**",
+            *[f"- {epochs} epochs: {projected_seconds(epochs)/3600:.2f} hours" for epochs in (100,300,1000)], "",
             "This is a throughput extrapolation, not a convergence forecast or a guaranteed runtime. The small local dataset can remain warm in the OS page cache; the full dataset may have higher I/O costs. Add transfer, startup, evaluation and reporting time separately."]
     lines += ["", "## Artifacts", "", "Keep config.json, inventory.json, history.jsonl, summary.json, model.pt and last.pt with this report. A changed dataset inventory requires a new experiment; the pilot checkpoint cannot be resumed unchanged after adding backfills.", ""]
     return "\n".join(lines)

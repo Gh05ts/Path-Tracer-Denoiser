@@ -1,0 +1,27 @@
+{
+  "format": "wavefront-ntasad-joint-training",
+  "version": 1,
+  "data_root": "/home/ubuntu/workspace/h100-ready-pilot/runs/ready-pilot-data",
+  "epochs": 3,
+  "batch_size": 4,
+  "window_length": 5,
+  "patch_size": 128,
+  "patches_per_window": 4,
+  "validation_patch_size": 256,
+  "validation_crops_per_window": 5,
+  "denoiser_channels": 48,
+  "sampler_channels": 48,
+  "learning_rate": 0.001,
+  "radiance_gradient_floor": 0.000001,
+  "seed": 7,
+  "num_workers": 0,
+  "cpu_threads": 4,
+  "train_groups": [
+    "breakfast_room_view_00_right_orbit_slow",
+    "dragon_view_01_left_dolly_slow"
+  ],
+  "validation_groups": [
+    "bathroom_view_00_dolly_medium",
+    "classroom_view_02_linear_fast"
+  ]
+}

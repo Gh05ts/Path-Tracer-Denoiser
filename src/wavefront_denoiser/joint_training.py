@@ -16,6 +16,7 @@ from .device import select_device
 from .joint import JointNTASAD
 from .joint_checkpoint import joint_optimizer, load_joint_checkpoint, restore_joint_training, save_joint_checkpoint
 from .joint_data import JointPatchDataset, joint_inventory, joint_dataset_read_lock
+from .joint_loading import joint_batches
 from .loss import sequence_loss
 from .model import INPUT_CHANNELS
 from .ntasad_radiance import radiance_gradient_policy
@@ -27,7 +28,9 @@ def training_config(path):
     root = read_json(path)
     defaults = joint_training_config()
     if (root.get("format") != defaults["format"] or type(root.get("version")) is not int or root["version"] != 1
-            or root.keys()-(defaults.keys() | {"r2_streaming", "radiance_gradient_floor"})):
+            or root.keys()-(defaults.keys() | {"r2_streaming", "radiance_gradient_floor", "validation_batch_size", "loader_policy",
+                                              "decoded_cache_frames", "prefetch_batches", "validation_every_epochs",
+                                              "validation_warmup_epochs", "finite_check_policy", "checkpoint_every_epochs"})):
         raise ValueError("Invalid or unknown joint training options; use train-joint.json, not the historical plan")
     config = dict(defaults,**root)
     if not isinstance(config["data_root"],str) or not config["data_root"]:
@@ -37,6 +40,23 @@ def training_config(path):
     # comparison semantics. The field is pinned when stabilization is enabled.
     with radiance_gradient_policy(config.get("radiance_gradient_floor", 0.)):
         pass
+    for key,minimum in (("validation_every_epochs",1),("validation_warmup_epochs",0),("checkpoint_every_epochs",1)):
+        if key in config and (type(config[key]) is not int or config[key] < minimum):
+            raise ValueError(f"{key} must be an integer >= {minimum}")
+    if "finite_check_policy" in config and config["finite_check_policy"] != "grouped_v1":
+        raise ValueError("finite_check_policy must be grouped_v1")
+    if "loader_policy" in config and config["loader_policy"] not in ("cached_v1","prefetch_v1","prefetch_fused_v1"):
+        raise ValueError("loader_policy must be cached_v1, prefetch_v1 or prefetch_fused_v1")
+    for key in ("decoded_cache_frames","prefetch_batches"):
+        if key in config:
+            if type(config[key]) is not int or config[key] < 1:
+                raise ValueError(f"{key} must be a positive integer")
+            if config.get("loader_policy") is None:
+                raise ValueError(f"{key} requires loader_policy")
+    if "prefetch_batches" in config and config.get("loader_policy") not in ("prefetch_v1","prefetch_fused_v1"):
+        raise ValueError("prefetch_batches requires prefetch_v1")
+    if "r2_streaming" in config and config.get("loader_policy") is not None:
+        raise ValueError("loader_policy currently supports local data only")
     if "r2_streaming" in config:
         streaming = config["r2_streaming"]
         if (not isinstance(streaming, dict) or set(streaming)-{"source", "layout", "spool_directory"}
@@ -54,6 +74,10 @@ def training_config(path):
                 "validation_patch_size","validation_crops_per_window","cpu_threads"):
         if type(config[key]) is not int or config[key] < 1:
             raise ValueError(f"{key} must be a positive integer")
+    # Keep omission unchanged in historical checkpoint configs. When supplied,
+    # this execution policy is pinned by the existing exact-resume comparison.
+    if type(config.get("validation_batch_size", 1)) is not int or config.get("validation_batch_size", 1) < 1:
+        raise ValueError("validation_batch_size must be a positive integer")
     if config["window_length"] < 3 or config["validation_crops_per_window"] > 5:
         raise ValueError("Need at least three frames and one to five validation crops")
     if type(config["seed"]) is not int or config["seed"] < 0 or type(config["num_workers"]) is not int or config["num_workers"] != 0:
@@ -78,6 +102,22 @@ def training_config(path):
     return config
 
 
+def validation_due(epoch,config):
+    return (epoch <= config.get("validation_warmup_epochs",0)
+            or epoch % config.get("validation_every_epochs",1)==0 or epoch==config["epochs"])
+
+
+def checkpoint_due(epoch,config):
+    return epoch % config.get('checkpoint_every_epochs',1)==0 or epoch==config['epochs']
+
+
+def finite_group_flags(groups,device):
+    """Check every tensor, then transfer only the per-group booleans once."""
+    flags = [torch.stack([torch.isfinite(t.detach()).all() for t in values]).all()
+             if values else torch.ones((),dtype=torch.bool,device=device) for values in groups]
+    return torch.stack(flags).cpu().tolist()
+
+
 def _batch(batch,device):
     return ({key:batch["buffers"][key].to(device) for key in INPUT_CHANNELS},
             batch["layers"].to(device),batch["buffers"]["reference"].to(device))
@@ -94,19 +134,29 @@ def _metrics(prediction,reference,max_spp):
 
 
 @torch.inference_mode()
-def evaluate_joint(model,dataset,device):
+def evaluate_joint(model,dataset,device,*,batch_size=1,loader_policy=None,prefetch_batches=2):
+    if loader_policy not in (None,"cached_v1","prefetch_v1","prefetch_fused_v1"):
+        raise ValueError("Invalid validation loader_policy")
+    if type(batch_size) is not int or batch_size < 1:
+        raise ValueError("validation batch_size must be a positive integer")
+    if not len(dataset):
+        raise ValueError("Validation dataset must contain at least one window")
     model.eval()
     totals = {}
     paths = pixels = 0
-    loader = torch.utils.data.DataLoader(dataset,batch_size=1,shuffle=False,generator=torch.Generator().manual_seed(0))
-    for batch in loader:
-        buffers,layers,reference = _batch(batch,device)
-        # References stay outside prediction during evaluation.
-        prediction = model.forward_sequence(buffers,layers,transformed=True)
-        for key,value in _metrics(prediction,reference,model.max_spp).items():
-            totals[key] = totals.get(key,0.)+float(value)
-        paths += int(prediction.counts.sum())
-        pixels += prediction.counts.numel()
+    with joint_batches(dataset,batch_size=batch_size,
+            generator=torch.Generator().manual_seed(0),
+            prefetch=loader_policy in ("prefetch_v1","prefetch_fused_v1"),prefetch_batches=prefetch_batches) as loader:
+        for batch in loader:
+            buffers,layers,reference = _batch(batch,device)
+            # References stay outside prediction during evaluation.
+            prediction = model.forward_sequence(buffers,layers,transformed=True)
+            for key,value in _metrics(prediction,reference,model.max_spp).items():
+                # Metrics are means over equal-sized windows. Weight the partial
+                # final batch by its actual size; path/pixel counters remain sums.
+                totals[key] = totals.get(key,0.)+float(value)*reference.shape[0]
+            paths += int(prediction.counts.sum())
+            pixels += prediction.counts.numel()
     return {**{k:v/len(dataset) for k,v in totals.items()},"replayed_paths":paths,"replayed_pixels":pixels}
 
 
@@ -128,10 +178,12 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         provenance["image_verification"] = "sha256_on_every_download"
     train = JointPatchDataset(config["data_root"],partition="train",sequence_ids=selected["train"],
         length=config["window_length"],patch_size=config["patch_size"],patches_per_window=config["patches_per_window"],
-        frame_source=frame_source)
+        frame_source=frame_source,cache_maps=config.get("loader_policy") is not None,
+        cache_frames=config.get("decoded_cache_frames",16),fast_crops=config.get("loader_policy")=="prefetch_fused_v1")
     validation = JointPatchDataset(config["data_root"],partition="validation",sequence_ids=selected["validation"],
         length=config["window_length"],patch_size=config["validation_patch_size"],
-        patches_per_window=config["validation_crops_per_window"],augment=False,frame_source=frame_source)
+        patches_per_window=config["validation_crops_per_window"],augment=False,frame_source=frame_source,
+        cache_maps=config.get("loader_policy") is not None,cache_frames=config.get("decoded_cache_frames",16),fast_crops=config.get("loader_policy")=="prefetch_fused_v1")
     device = select_device(device_name)
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
@@ -160,13 +212,12 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
     if payload is not None:
         progress = restore_joint_training(model,optimizer,payload,generator=generator)
         epoch0,global_step = progress["epoch"],progress["global_step"]
-    loader = torch.utils.data.DataLoader(train,batch_size=config["batch_size"],shuffle=True,
-                                        num_workers=0,generator=generator)
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     setup_seconds = time.perf_counter()-started
     initial_started = time.perf_counter()
-    initial = evaluate_joint(model,validation,device)
+    initial = evaluate_joint(model,validation,device,batch_size=config.get("validation_batch_size",1),
+        loader_policy=config.get("loader_policy"),prefetch_batches=config.get("prefetch_batches",2))
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     initial_seconds = time.perf_counter()-initial_started
@@ -187,49 +238,67 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         paths = pixels = windows = 0
         data_seconds = 0.
         waiting = time.perf_counter()
-        for batch in loader:
-            data_seconds += time.perf_counter()-waiting
-            buffers,layers,reference = _batch(batch,device)
-            optimizer.zero_grad(set_to_none=True)
-            prediction = model.forward_sequence(buffers,layers,training_reference=reference,transformed=True)
-            metrics = _metrics(prediction,reference,model.max_spp)
-            metrics["loss"].backward()
-            for name,network in (("sampler",model.sampler),("denoiser",model.denoiser)):
-                gradients = [p.grad for p in network.parameters() if p.grad is not None]
-                if any(not torch.isfinite(g).all() for g in gradients):
-                    raise ValueError(f"Non-finite {name} training gradient")
-                metrics[name+"_gradient_norm"] = torch.stack([g.detach().norm() for g in gradients]).norm() if gradients else reference.new_tensor(0.)
-            optimizer.step()
-            if any(not torch.isfinite(p).all() for p in model.parameters()):
-                raise ValueError("Non-finite joint weights after optimizer update")
-            global_step += 1
-            count = reference.shape[0]
-            windows += count
-            for key,value in metrics.items():
-                totals[key] = totals.get(key,0.)+float(value.detach())*count
-            paths += int(prediction.counts.sum())
-            pixels += prediction.counts.numel()
-            waiting = time.perf_counter()
+        with joint_batches(train,batch_size=config["batch_size"],shuffle=True,generator=generator,
+                prefetch=config.get("loader_policy") in ("prefetch_v1","prefetch_fused_v1"),
+                prefetch_batches=config.get("prefetch_batches",2)) as loader:
+            for batch in loader:
+                data_seconds += time.perf_counter()-waiting
+                buffers,layers,reference = _batch(batch,device)
+                optimizer.zero_grad(set_to_none=True)
+                prediction = model.forward_sequence(buffers,layers,training_reference=reference,transformed=True)
+                metrics = _metrics(prediction,reference,model.max_spp)
+                metrics["loss"].backward()
+                networks = [(name,[p.grad for p in network.parameters() if p.grad is not None])
+                            for name,network in (("sampler",model.sampler),("denoiser",model.denoiser))]
+                if config.get("finite_check_policy")=="grouped_v1":
+                    flags = finite_group_flags([g for _,g in networks],device)
+                else:
+                    flags = [not any(not torch.isfinite(g).all() for g in gradients) for _,gradients in networks]
+                for (name,gradients),finite in zip(networks,flags):
+                    if not finite:
+                        raise ValueError(f"Non-finite {name} training gradient")
+                    metrics[name+"_gradient_norm"] = torch.stack([g.detach().norm() for g in gradients]).norm() if gradients else reference.new_tensor(0.)
+                optimizer.step()
+                weights_finite = (finite_group_flags([list(model.parameters())],device)[0]
+                    if config.get("finite_check_policy")=="grouped_v1" else
+                    not any(not torch.isfinite(p).all() for p in model.parameters()))
+                if not weights_finite:
+                    raise ValueError("Non-finite joint weights after optimizer update")
+                global_step += 1
+                count = reference.shape[0]
+                windows += count
+                for key,value in metrics.items():
+                    totals[key] = totals.get(key,0.)+float(value.detach())*count
+                paths += int(prediction.counts.sum())
+                pixels += prediction.counts.numel()
+                waiting = time.perf_counter()
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         train_seconds = time.perf_counter()-epoch_started
         validation_started = time.perf_counter()
-        measured = evaluate_joint(model,validation,device)
-        if device.type == "cuda":
-            torch.cuda.synchronize(device)
-        validation_seconds = time.perf_counter()-validation_started
+        measured = None
+        if validation_due(epoch,config):
+            measured = evaluate_joint(model,validation,device,batch_size=config.get("validation_batch_size",1),
+                loader_policy=config.get("loader_policy"),prefetch_batches=config.get("prefetch_batches",2))
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+        validation_seconds = time.perf_counter()-validation_started if measured is not None else 0.
         record = {"epoch":epoch,"global_step":global_step,
             "train":{**{k:v/windows for k,v in totals.items()},"replayed_paths":paths,"replayed_pixels":pixels},
             "validation":measured}
         checkpoint_started = time.perf_counter()
-        if measured["loss"] < best_loss:
+        best_saved = measured is not None and measured["loss"] < best_loss
+        if best_saved:
             best_loss,best_epoch,best = measured["loss"],epoch,measured
             save("model.pt",epoch)
-        save("last.pt",epoch)
+        resume_saved = checkpoint_due(epoch,config)
+        if resume_saved:
+            save("last.pt",epoch)
         timing = {"epoch":epoch,"training_seconds":train_seconds,"training_data_seconds":data_seconds,
             "training_steps":global_step-step0,"training_windows":windows,
-            "validation_seconds":validation_seconds,"validation_windows":len(validation),
-            "checkpoint_seconds":time.perf_counter()-checkpoint_started,
+            "validation_seconds":validation_seconds,"validation_windows":len(validation) if measured is not None else 0,
+            "checkpoint_seconds":time.perf_counter()-checkpoint_started if best_saved or resume_saved else 0.,
+            "resume_checkpoint_saved":resume_saved,"best_checkpoint_saved":best_saved,
             "epoch_seconds":time.perf_counter()-epoch_started}
         epoch_timings.append(timing)
         record["timing"] = timing
@@ -252,6 +321,7 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
     if frame_source is not None:
         summary["r2_streaming"] = dict(frame_source.stats)
     (output/"summary.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
+    train.close(); validation.close()
     return summary
 
 

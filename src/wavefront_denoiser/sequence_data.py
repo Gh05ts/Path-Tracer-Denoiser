@@ -34,6 +34,11 @@ def transform_window(buffers: Mapping[str, torch.Tensor], *, top: int, left: int
         if flip_y:
             value = value.flip(-2)
         result[name] = torch.rot90(value, rotations % 4, dims=(-2, -1)).clone()
+    return finish_window_transform(result,flip_x=flip_x,flip_y=flip_y,rotations=rotations,size=size)
+
+
+def finish_window_transform(result, *, flip_x, flip_y, rotations, size):
+    """Finish motion/mask semantics on already spatially transformed owned buffers."""
     motion = result["motion"]
     if motion.shape[1] != 2 or result["history_valid"].shape[1] != 1:
         raise ValueError("Expected two motion channels and one history mask channel")

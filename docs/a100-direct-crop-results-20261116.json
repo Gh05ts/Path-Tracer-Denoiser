@@ -1,0 +1,243 @@
+{
+  "date": "2026-11-16",
+  "source": {
+    "commit": "875094696830c074bc26e0d79db23e1193a1ac1b",
+    "branch": "benchmark/a100",
+    "dirty": false,
+    "source_root": "/home/ubuntu/denoiser-handoff/Path-Tracer-Denoiser",
+    "config_path": "/home/ubuntu/denoiser-handoff/Path-Tracer-Denoiser/configs/train-ready-pilot-a100-throughput.json",
+    "input_config_sha256": "7f2492580d0fdae033b1d67fe4469dd22b4415c9c04b8efb037e35b4895703fd",
+    "base_config": {
+      "format": "wavefront-ntasad-joint-training",
+      "version": 1,
+      "data_root": "/home/ubuntu/workspace/h100-ready-pilot/runs/ready-pilot-data",
+      "epochs": 10,
+      "batch_size": 16,
+      "patch_size": 128,
+      "patches_per_window": 4,
+      "window_length": 5,
+      "learning_rate": 0.001,
+      "seed": 7,
+      "denoiser_channels": 48,
+      "sampler_channels": 48,
+      "average_spp": 4,
+      "max_spp": 63,
+      "allocation_policy": "capped_softmax_v1",
+      "zero_policy": "unit_denominator",
+      "validation_patch_size": 256,
+      "validation_crops_per_window": 5,
+      "reconstruction_version": "pixel_mean_v2",
+      "num_workers": 0,
+      "cpu_threads": 4,
+      "train_groups": [
+        "breakfast_room_view_00_right_orbit_slow",
+        "dragon_view_01_left_dolly_slow"
+      ],
+      "validation_groups": [
+        "bathroom_view_00_dolly_medium",
+        "classroom_view_02_linear_fast"
+      ],
+      "radiance_gradient_floor": 1e-06,
+      "loader_policy": "prefetch_v1"
+    },
+    "sweep": "crops",
+    "batches": [],
+    "loader_cases": null,
+    "crop_cases": [
+      "prefetch_v1",
+      "prefetch_fused_v1"
+    ],
+    "warmup_epochs": 2,
+    "measured_epochs": 8,
+    "cache_frames": null,
+    "prefetch_depths": null,
+    "memory_limit_fraction": 0.8,
+    "discard_checkpoints": true,
+    "cache_policy": "OS cache uncontrolled; later cases may benefit from earlier reads",
+    "schedule": "Same seed, initial weights and loader RNG reset in each fresh process; fixed validation crops"
+  },
+  "results": [
+    {
+      "case": "loader-prefetch_v1",
+      "batch": 16,
+      "loader_policy": "prefetch_v1",
+      "decoded_cache_frames": 16,
+      "prefetch_batches": 2,
+      "inventory_sha256": "1d07b45408766ae8804449c7aa5d70f360df17e6489412ac3a56292c8423f688",
+      "measured_epochs": 8,
+      "training_windows": 256,
+      "optimizer_updates": 16,
+      "training_windows_per_second": 27.681291913526277,
+      "training_pixels_per_second": 2267651.4335560724,
+      "validation_windows_per_second": 11.532882764387935,
+      "validation_pixels_per_second": 3779095.0242346385,
+      "training_seconds": 9.248123274004683,
+      "training_data_wait_seconds": 4.356995572996311,
+      "validation_seconds": 27.7467487130034,
+      "checkpoint_seconds": 0.776270554997609,
+      "cuda_peak_allocated_bytes": 6620909056,
+      "cuda_peak_reserved_bytes": 7759462400,
+      "process_peak_rss_bytes": 9287958528,
+      "initial_validation": {
+        "loss": 0.18282570778392254,
+        "spatial_l1": 0.10167667586356402,
+        "temporal_l1": 0.08114903264213354,
+        "actual_spp": 4.009318828582764,
+        "expected_spp": 3.9999999940395354,
+        "zero_fraction": 0.00023336410522460936,
+        "saturated_fraction": 2.86102294921875e-06,
+        "unavailable_fraction": 0.0,
+        "replayed_paths": 52526515,
+        "replayed_pixels": 13107200
+      },
+      "last_validation": {
+        "loss": 0.19444797737523914,
+        "spatial_l1": 0.1063149874098599,
+        "temporal_l1": 0.08813298961613328,
+        "actual_spp": 3.9778725624084474,
+        "expected_spp": 4.000000023841858,
+        "zero_fraction": 0.4327423095703125,
+        "saturated_fraction": 0.018901920318603514,
+        "unavailable_fraction": 0.0634385108947754,
+        "replayed_paths": 52196777,
+        "replayed_pixels": 13107200
+      },
+      "model_state_sha256": "b2a2a70fea6fbc3ed20d3cb4666165230b389739f15192c969375dfe25a40bb5",
+      "training_state_sha256": "070ff65221f13fa16d265c788d84b0e5df2b42d11d6f0b4e713320caa095ddb6",
+      "mean_epoch_seconds": 4.721403716750729
+    },
+    {
+      "case": "loader-prefetch_fused_v1",
+      "batch": 16,
+      "loader_policy": "prefetch_fused_v1",
+      "decoded_cache_frames": 16,
+      "prefetch_batches": 2,
+      "inventory_sha256": "1d07b45408766ae8804449c7aa5d70f360df17e6489412ac3a56292c8423f688",
+      "measured_epochs": 8,
+      "training_windows": 256,
+      "optimizer_updates": 16,
+      "training_windows_per_second": 36.79564759140663,
+      "training_pixels_per_second": 3014299.450688031,
+      "validation_windows_per_second": 12.349585594111081,
+      "validation_pixels_per_second": 4046712.2074783193,
+      "training_seconds": 6.957344598000418,
+      "training_data_wait_seconds": 1.8888261959964439,
+      "validation_seconds": 25.91180064799846,
+      "checkpoint_seconds": 0.7634626990002289,
+      "cuda_peak_allocated_bytes": 6620909056,
+      "cuda_peak_reserved_bytes": 7759462400,
+      "process_peak_rss_bytes": 9222266880,
+      "initial_validation": {
+        "loss": 0.18282570778392254,
+        "spatial_l1": 0.10167667586356402,
+        "temporal_l1": 0.08114903264213354,
+        "actual_spp": 4.009318828582764,
+        "expected_spp": 3.9999999940395354,
+        "zero_fraction": 0.00023336410522460936,
+        "saturated_fraction": 2.86102294921875e-06,
+        "unavailable_fraction": 0.0,
+        "replayed_paths": 52526515,
+        "replayed_pixels": 13107200
+      },
+      "last_validation": {
+        "loss": 0.19444797737523914,
+        "spatial_l1": 0.1063149874098599,
+        "temporal_l1": 0.08813298961613328,
+        "actual_spp": 3.9778725624084474,
+        "expected_spp": 4.000000023841858,
+        "zero_fraction": 0.4327423095703125,
+        "saturated_fraction": 0.018901920318603514,
+        "unavailable_fraction": 0.0634385108947754,
+        "replayed_paths": 52196777,
+        "replayed_pixels": 13107200
+      },
+      "model_state_sha256": "b2a2a70fea6fbc3ed20d3cb4666165230b389739f15192c969375dfe25a40bb5",
+      "training_state_sha256": "070ff65221f13fa16d265c788d84b0e5df2b42d11d6f0b4e713320caa095ddb6",
+      "mean_epoch_seconds": 4.204086342125038
+    }
+  ],
+  "resources": [
+    {
+      "case": "loader-prefetch_v1",
+      "peak_sampled_gpu_fraction": 0.1931396484375,
+      "peak_host_pressure_fraction": 0.029933665801047393,
+      "software": {
+        "python": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+        "python_executable": "/home/ubuntu/workspace/h100-ready-pilot/.venv/bin/python",
+        "import_path": "/home/ubuntu/denoiser-handoff/Path-Tracer-Denoiser/src/wavefront_denoiser/__init__.py",
+        "torch": "2.7.0",
+        "cuda": "12.8",
+        "cudnn": 90800,
+        "matmul_precision": "highest",
+        "cuda_matmul_allow_tf32": false,
+        "cudnn_allow_tf32": true,
+        "cublas_workspace_config": ":4096:8",
+        "training_deterministic_algorithms": true,
+        "training_cudnn_deterministic": true,
+        "training_cudnn_benchmark": false,
+        "parameter_dtype": "float32",
+        "autocast": false,
+        "memory_limit": {
+          "fraction": 0.8,
+          "allocator_budget_bytes": 32942365081,
+          "initial_nonallocator_bytes": 445448192,
+          "margin_bytes": 536870912
+        }
+      }
+    },
+    {
+      "case": "loader-prefetch_fused_v1",
+      "peak_sampled_gpu_fraction": 0.1931396484375,
+      "peak_host_pressure_fraction": 0.030976797688824997,
+      "software": {
+        "python": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+        "python_executable": "/home/ubuntu/workspace/h100-ready-pilot/.venv/bin/python",
+        "import_path": "/home/ubuntu/denoiser-handoff/Path-Tracer-Denoiser/src/wavefront_denoiser/__init__.py",
+        "torch": "2.7.0",
+        "cuda": "12.8",
+        "cudnn": 90800,
+        "matmul_precision": "highest",
+        "cuda_matmul_allow_tf32": false,
+        "cudnn_allow_tf32": true,
+        "cublas_workspace_config": ":4096:8",
+        "training_deterministic_algorithms": true,
+        "training_cudnn_deterministic": true,
+        "training_cudnn_benchmark": false,
+        "parameter_dtype": "float32",
+        "autocast": false,
+        "memory_limit": {
+          "fraction": 0.8,
+          "allocator_budget_bytes": 32942365081,
+          "initial_nonallocator_bytes": 445448192,
+          "margin_bytes": 536870912
+        }
+      }
+    }
+  ],
+  "cpu_tests_passed": 85,
+  "all_16_real_augmentation_combinations_exact": true,
+  "all_epoch_metrics_and_final_state_exact": true,
+  "gpu_resume": {
+    "passed": true,
+    "source_commit": "875094696830c074bc26e0d79db23e1193a1ac1b",
+    "checks": [
+      "model weights",
+      "optimizer state",
+      "all RNG states",
+      "execution flags",
+      "dataset inventory",
+      "global step"
+    ],
+    "epochs": 3,
+    "global_step": 6,
+    "batch_size": 16,
+    "loader_policy": "prefetch_fused_v1",
+    "device": "cuda"
+  },
+  "profile_seconds": {
+    "baseline": 1.0490855259999996,
+    "direct": 0.555675657
+  },
+  "selected_policy": "prefetch_fused_v1",
+  "scope": "warm local subset, OS cache uncontrolled; no full-dataset I/O or convergence claim"
+}

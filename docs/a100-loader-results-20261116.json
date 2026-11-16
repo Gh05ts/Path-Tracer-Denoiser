@@ -1,0 +1,278 @@
+{
+  "date": "2026-11-16",
+  "manifest": {
+    "commit": "57e5b6059a2b808abaab6eb9ae680b9558bffff8",
+    "branch": "benchmark/a100",
+    "dirty": false,
+    "source_root": "/home/ubuntu/denoiser-handoff/Path-Tracer-Denoiser",
+    "config_path": "/home/ubuntu/denoiser-handoff/Path-Tracer-Denoiser/configs/train-ready-pilot-a100-throughput.json",
+    "input_config_sha256": "00c9e7e60d890c9c37f66ff51365708c17c954c97e61778c3f5f70b603fcf68e",
+    "base_config": {
+      "format": "wavefront-ntasad-joint-training",
+      "version": 1,
+      "data_root": "/home/ubuntu/workspace/h100-ready-pilot/runs/ready-pilot-data",
+      "epochs": 10,
+      "batch_size": 16,
+      "patch_size": 128,
+      "patches_per_window": 4,
+      "window_length": 5,
+      "learning_rate": 0.001,
+      "seed": 7,
+      "denoiser_channels": 48,
+      "sampler_channels": 48,
+      "average_spp": 4,
+      "max_spp": 63,
+      "allocation_policy": "capped_softmax_v1",
+      "zero_policy": "unit_denominator",
+      "validation_patch_size": 256,
+      "validation_crops_per_window": 5,
+      "reconstruction_version": "pixel_mean_v2",
+      "num_workers": 0,
+      "cpu_threads": 4,
+      "train_groups": [
+        "breakfast_room_view_00_right_orbit_slow",
+        "dragon_view_01_left_dolly_slow"
+      ],
+      "validation_groups": [
+        "bathroom_view_00_dolly_medium",
+        "classroom_view_02_linear_fast"
+      ],
+      "radiance_gradient_floor": 1e-06
+    },
+    "sweep": "loader",
+    "batches": [],
+    "loader_cases": [
+      "synchronous",
+      "cached_v1",
+      "prefetch_v1"
+    ],
+    "warmup_epochs": 2,
+    "measured_epochs": 8,
+    "cache_policy": "OS cache uncontrolled; later cases may benefit from earlier reads",
+    "schedule": "Same seed, initial weights and loader RNG reset in each fresh process; fixed validation crops"
+  },
+  "software": {
+    "python": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+    "python_executable": "/home/ubuntu/workspace/h100-ready-pilot/.venv/bin/python",
+    "import_path": "/home/ubuntu/denoiser-handoff/Path-Tracer-Denoiser/src/wavefront_denoiser/__init__.py",
+    "torch": "2.7.0",
+    "cuda": "12.8",
+    "cudnn": 90800,
+    "matmul_precision": "highest",
+    "cuda_matmul_allow_tf32": false,
+    "cudnn_allow_tf32": true,
+    "cublas_workspace_config": ":4096:8",
+    "training_deterministic_algorithms": true,
+    "training_cudnn_deterministic": true,
+    "training_cudnn_benchmark": false,
+    "parameter_dtype": "float32",
+    "autocast": false
+  },
+  "results": [
+    {
+      "case": "loader-synchronous",
+      "batch": 16,
+      "loader_policy": null,
+      "inventory_sha256": "1d07b45408766ae8804449c7aa5d70f360df17e6489412ac3a56292c8423f688",
+      "measured_epochs": 8,
+      "training_windows": 256,
+      "optimizer_updates": 16,
+      "training_windows_per_second": 13.697601487279261,
+      "training_pixels_per_second": 1122107.513837917,
+      "validation_windows_per_second": 5.046398322452949,
+      "validation_pixels_per_second": 1653603.8023013822,
+      "training_seconds": 18.6894034140023,
+      "training_data_wait_seconds": 13.614906097003768,
+      "validation_seconds": 63.41156198000135,
+      "checkpoint_seconds": 0.80028667499937,
+      "cuda_peak_allocated_bytes": 6620909056,
+      "cuda_peak_reserved_bytes": 7759462400,
+      "process_peak_rss_bytes": 2742329344,
+      "initial_validation": {
+        "loss": 0.18282570778392254,
+        "spatial_l1": 0.10167667586356402,
+        "temporal_l1": 0.08114903264213354,
+        "actual_spp": 4.009318828582764,
+        "expected_spp": 3.9999999940395354,
+        "zero_fraction": 0.00023336410522460936,
+        "saturated_fraction": 2.86102294921875e-06,
+        "unavailable_fraction": 0.0,
+        "replayed_paths": 52526515,
+        "replayed_pixels": 13107200
+      },
+      "last_validation": {
+        "loss": 0.19444797737523914,
+        "spatial_l1": 0.1063149874098599,
+        "temporal_l1": 0.08813298961613328,
+        "actual_spp": 3.9778725624084474,
+        "expected_spp": 4.000000023841858,
+        "zero_fraction": 0.4327423095703125,
+        "saturated_fraction": 0.018901920318603514,
+        "unavailable_fraction": 0.0634385108947754,
+        "replayed_paths": 52196777,
+        "replayed_pixels": 13107200
+      },
+      "mean_training_seconds": 2.3361754267502874,
+      "mean_validation_seconds": 7.926445247500169,
+      "mean_epoch_seconds": 10.362666737250038
+    },
+    {
+      "case": "loader-cached_v1",
+      "batch": 16,
+      "loader_policy": "cached_v1",
+      "inventory_sha256": "1d07b45408766ae8804449c7aa5d70f360df17e6489412ac3a56292c8423f688",
+      "measured_epochs": 8,
+      "training_windows": 256,
+      "optimizer_updates": 16,
+      "training_windows_per_second": 20.033777929362746,
+      "training_pixels_per_second": 1641167.087973396,
+      "validation_windows_per_second": 6.110852573669483,
+      "validation_pixels_per_second": 2002404.1713400162,
+      "training_seconds": 12.77841857400199,
+      "training_data_wait_seconds": 7.719483576005587,
+      "validation_seconds": 52.36585176000153,
+      "checkpoint_seconds": 0.8043109129976074,
+      "cuda_peak_allocated_bytes": 6620909056,
+      "cuda_peak_reserved_bytes": 7759462400,
+      "process_peak_rss_bytes": 8958046208,
+      "initial_validation": {
+        "loss": 0.18282570778392254,
+        "spatial_l1": 0.10167667586356402,
+        "temporal_l1": 0.08114903264213354,
+        "actual_spp": 4.009318828582764,
+        "expected_spp": 3.9999999940395354,
+        "zero_fraction": 0.00023336410522460936,
+        "saturated_fraction": 2.86102294921875e-06,
+        "unavailable_fraction": 0.0,
+        "replayed_paths": 52526515,
+        "replayed_pixels": 13107200
+      },
+      "last_validation": {
+        "loss": 0.19444797737523914,
+        "spatial_l1": 0.1063149874098599,
+        "temporal_l1": 0.08813298961613328,
+        "actual_spp": 3.9778725624084474,
+        "expected_spp": 4.000000023841858,
+        "zero_fraction": 0.4327423095703125,
+        "saturated_fraction": 0.018901920318603514,
+        "unavailable_fraction": 0.0634385108947754,
+        "replayed_paths": 52196777,
+        "replayed_pixels": 13107200
+      },
+      "mean_training_seconds": 1.5973023217502487,
+      "mean_validation_seconds": 6.545731470000192,
+      "mean_epoch_seconds": 8.243582710000055
+    },
+    {
+      "case": "loader-prefetch_v1",
+      "batch": 16,
+      "loader_policy": "prefetch_v1",
+      "inventory_sha256": "1d07b45408766ae8804449c7aa5d70f360df17e6489412ac3a56292c8423f688",
+      "measured_epochs": 8,
+      "training_windows": 256,
+      "optimizer_updates": 16,
+      "training_windows_per_second": 25.358418424331546,
+      "training_pixels_per_second": 2077361.6373212405,
+      "validation_windows_per_second": 11.274632263318674,
+      "validation_pixels_per_second": 3694471.5000442634,
+      "training_seconds": 10.095266814998467,
+      "training_data_wait_seconds": 5.129051709996929,
+      "validation_seconds": 28.38230041800125,
+      "checkpoint_seconds": 0.8016405690032116,
+      "cuda_peak_allocated_bytes": 6620909056,
+      "cuda_peak_reserved_bytes": 7759462400,
+      "process_peak_rss_bytes": 9215664128,
+      "initial_validation": {
+        "loss": 0.18282570778392254,
+        "spatial_l1": 0.10167667586356402,
+        "temporal_l1": 0.08114903264213354,
+        "actual_spp": 4.009318828582764,
+        "expected_spp": 3.9999999940395354,
+        "zero_fraction": 0.00023336410522460936,
+        "saturated_fraction": 2.86102294921875e-06,
+        "unavailable_fraction": 0.0,
+        "replayed_paths": 52526515,
+        "replayed_pixels": 13107200
+      },
+      "last_validation": {
+        "loss": 0.19444797737523914,
+        "spatial_l1": 0.1063149874098599,
+        "temporal_l1": 0.08813298961613328,
+        "actual_spp": 3.9778725624084474,
+        "expected_spp": 4.000000023841858,
+        "zero_fraction": 0.4327423095703125,
+        "saturated_fraction": 0.018901920318603514,
+        "unavailable_fraction": 0.0634385108947754,
+        "replayed_paths": 52196777,
+        "replayed_pixels": 13107200
+      },
+      "mean_training_seconds": 1.2619083518748084,
+      "mean_validation_seconds": 3.5477875522501563,
+      "mean_epoch_seconds": 4.909911588125169
+    }
+  ],
+  "cross_policy_gpu_parity": {
+    "passed": true,
+    "checks": [
+      "exact model weights",
+      "all train/validation epoch metrics",
+      "CPU and loader RNG"
+    ],
+    "cases": [
+      "synchronous",
+      "cached_v1",
+      "prefetch_v1"
+    ]
+  },
+  "gpu_exact_resume": {
+    "passed": true,
+    "source_commit": "57e5b6059a2b808abaab6eb9ae680b9558bffff8",
+    "checks": [
+      "model weights",
+      "optimizer state",
+      "all RNG states",
+      "execution flags",
+      "dataset inventory",
+      "global step"
+    ],
+    "epochs": 3,
+    "global_step": 6,
+    "batch_size": 16,
+    "loader_policy": "prefetch_v1",
+    "device": "cuda"
+  },
+  "h2d_profile": {
+    "source_commit": "57e5b6059a2b808abaab6eb9ae680b9558bffff8",
+    "batch_size": 16,
+    "bytes": 193986560,
+    "iterations": 10,
+    "blocking_pageable_h2d_median_seconds": 0.011565767499632784,
+    "times_seconds": [
+      0.011665279000226292,
+      0.011560267999811913,
+      0.013526056998671265,
+      0.011565467999389512,
+      0.011542236999957822,
+      0.011533887000041432,
+      0.011469074999695295,
+      0.01158789699911722,
+      0.011566066999876057,
+      0.011868225999933202
+    ],
+    "scope": "isolated warm transfer including allocation and host overhead; no pinning or overlap"
+  },
+  "cpu_regression_tests_passed": 153,
+  "selected_config": "configs/train-ready-pilot-a100-throughput.json",
+  "config_changes_from_original": {
+    "loader_policy": [
+      null,
+      "prefetch_v1"
+    ],
+    "batch_size": [
+      4,
+      16
+    ]
+  },
+  "epoch_speedup": 2.110560760872475,
+  "scope": "warm local pilot subset, OS cache uncontrolled; no full-data I/O or convergence claim"
+}
