@@ -1,5 +1,8 @@
 # Distributed v4 clip generation
 
+After generation completes, use the separate [two-machine backfill runner](BACKFILL.md)
+to generate the deferred layers and decoded caches, with integrator 12 on both hosts.
+
 One task is one entire eight-frame clip: the locked 4-SPP inputs and 1024-SPP
 references, its required 1/2/8/16/32-SPP companion layers, and its required decoded
 cache. Existing backfill boundaries remain in force. Earlier clips are not
@@ -38,7 +41,7 @@ Their stored frame hashes are checked on the primary worker.
 
 Decoded backfill still covers the first 44 clips / 352 frames, including all of
 the stopped clip. Additional-layer backfill still covers 38 clips / 304 frames.
-This generator resumes capture; it does not perform those deferred backfills.
+This generator resumes capture; deferred backfills use `distributed/backfill.py`.
 
 ## Prepare and initialize on the primary machine
 
@@ -112,6 +115,26 @@ cd Path-Tracer-Denoiser
 The destination must not already contain another checkout. Use the same sibling
 name `Wavefront-Path-Tracer` for the renderer repository. Changing `--workspace`
 rebases the workspace root; it does not translate checkout names.
+
+Create a generator environment on the second machine and install the project
+dependencies before starting a worker. Python 3.10+ is sufficient here. Upgrade
+pip and setuptools first so editable installation supports this project's build
+backend:
+
+```bash
+cd /home/myid/lv37348/pt/Path-Tracer-Denoiser
+python3 -m venv ../dataset/generator-venv
+source ../dataset/generator-venv/bin/activate
+python3 -m pip install --upgrade pip 'setuptools>=64' wheel
+python3 -m pip install -e .
+python3 -c "import sys, OpenEXR, numpy; print(sys.executable); print(OpenEXR.__version__)"
+```
+
+OpenEXR 3.3 satisfies the declared `>=3.2,<4` requirement. The asset preparation
+environment below only needs Pillow; creating it does not install the generator's
+Python dependencies. Keep using `generator-venv` for `check`, `status`, and worker
+launches. An error about a missing `build_editable` hook means the active packaging
+tools do not support editable installation; upgrade them in this environment.
 
 Fetch and prepare the asset submodules using the renderer's setup script. Use
 Python 3.11+ for this step: the primary's Pillow 13 conversion environment requires
@@ -246,7 +269,7 @@ Activate its Python 3.10+ environment first, so `python3` selects that environme
 If credentials are exported in its environment instead, omit `--settings-file`:
 
 ```bash
-DATASET_PYTHON=python3 \
+DATASET_PYTHON="$(pwd)/../dataset/generator-venv/bin/python3" \
   bash tools/run_dataset_background.sh distributed worker \
   --destination r2://denoiser/denoiser-v4 \
   --settings-file tools/generate_r2_dataset.py \

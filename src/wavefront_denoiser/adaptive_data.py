@@ -10,6 +10,7 @@ import numpy as np
 
 from .dataset_generation import digest, verify_frame
 from .frames import CONVENTIONS, Frame, FrameFormatError, load_frame, read_manifest
+from .layer_compatibility import compatible_bmw_layer
 
 
 LAYER_SPP = (1, 2, 4, 8, 16, 32)
@@ -52,12 +53,17 @@ def read_layer_capture(directory: Path, base: dict, layout: list[dict], *, pixel
     """Check layer provenance against a completed source frame, then read RGB means."""
     directory = Path(directory)
     metadata = read_json(directory / "manifest.json")
+    compatibility = compatible_bmw_layer(metadata, base)
+    if "source_compatibility" in metadata and not compatibility:
+        raise FrameFormatError("Invalid BMW layer compatibility provenance")
     if (metadata.get("schema") != "cuda-wavefront-sample-layers" or type(metadata.get("version")) is not int
             or metadata["version"] != 1 or metadata.get("image") != "layers.exr"
             or metadata.get("conventions") != CONVENTIONS):
         raise FrameFormatError("Unsupported companion-layer format or conventions")
     for key in ("width", "height", "sequence_id", "scene", "frame_index", "previous_frame_index",
                 "render_fingerprint", "scene_fingerprint"):
+        if key == "render_fingerprint" and compatibility:
+            continue
         if key not in base or metadata.get(key) != base[key]:
             raise FrameFormatError(f"Companion layers disagree with source: {key}")
     for key in ("camera", "previous_camera"):
@@ -68,6 +74,8 @@ def read_layer_capture(directory: Path, base: dict, layout: list[dict], *, pixel
         elif left.keys() != right.keys() or any(not np.allclose(left[k], right[k], rtol=2e-5, atol=2e-5) for k in right):
             raise FrameFormatError(f"Companion camera disagrees with source: {key}")
     render = {key: value for key, value in base["render"].items() if key not in RANGE_FIELDS}
+    if compatibility:
+        render["integrator_version"] = 12
     if metadata.get("render") != render:
         raise FrameFormatError("Companion integrator/render settings disagree with source")
     expected = [{"samples": item["samples"], "sample_start": base["render"]["sample_start"] + item["offset"],

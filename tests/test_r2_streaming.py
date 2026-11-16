@@ -19,6 +19,7 @@ from wavefront_denoiser.joint_data import JointPatchDataset
 from wavefront_denoiser.joint_training import train_joint
 from wavefront_denoiser.r2_native import R2NativeClient, R2RequestError
 from wavefront_denoiser.r2_streaming import R2FrameSource, prepare_r2_metadata
+from wavefront_denoiser.r2_streaming import materialize_decoded_snapshot
 
 
 @pytest.fixture
@@ -407,6 +408,36 @@ def test_decoded_metadata_and_streamed_crops_need_no_exrs(decoded_cloud, tmp_pat
         with pytest.raises(ValueError, match="Unknown R2 frame"):
             source.load_crop(group, index, size=5)
     assert len(api.calls) == calls
+
+
+def test_materialized_snapshot_trains_locally_and_reuses_verified_downloads(decoded_cloud, tmp_path):
+    root, api = decoded_cloud
+    snapshot = tmp_path/"local-pilot"
+    prepare_r2_metadata("r2://bucket/dataset", snapshot, layout="decoded")
+    first = materialize_decoded_snapshot(snapshot)
+    assert first["frames"] == 16 and first["downloaded_objects"] == 32
+    assert first["payload_bytes"] > 0
+    calls = len(api.calls)
+    second = materialize_decoded_snapshot(snapshot)
+    assert second["reused_objects"] == 32 and second["downloaded_objects"] == 0
+    assert not any(u.endswith(".npy") for _,u in api.calls[calls:])
+    local = JointPatchDataset(snapshot, partition="train", patch_size=5, augment=False)[0]
+    original = JointPatchDataset(root, partition="train", patch_size=5, augment=False)[0]
+    torch.testing.assert_close(local["layers"], original["layers"], rtol=0, atol=0)
+    config_path, _ = config_for(snapshot, epochs=1)
+    result = train_joint(config_path, tmp_path/"local-pilot-run", "cpu")
+    assert result["global_step"] == 4 and "r2_streaming" not in result
+    assert not result["test_pixels_loaded"]
+    import runpy
+    reporter = runpy.run_path(str(Path(__file__).resolve().parents[1]/"tools/report_joint_pilot.py"))
+    report = reporter["make_report"](tmp_path/"local-pilot-run")
+    assert "Full-dataset timing extrapolation" in report
+    assert "Peak process RAM" in report and "Sampler grad norm" in report
+    assert "PyTorch:" in report and "Test pixels loaded: False" in report
+    assert reporter["main"]([str(tmp_path/"local-pilot-run")]) == 0
+    assert (tmp_path/"local-pilot-run/report.md").read_text() == report
+    assert api.uploads == 0
+    assert not any("test_scene" in u and u.endswith(".npy") for _,u in api.calls)
 
 
 def test_decoded_streaming_training_and_resume_match_local(decoded_cloud, tmp_path, monkeypatch):

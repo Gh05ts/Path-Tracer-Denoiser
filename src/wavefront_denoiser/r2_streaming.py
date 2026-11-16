@@ -16,6 +16,48 @@ SOURCE_RECORD = "r2-source.json"
 DECODED_LOCKS = ("capture_lock.json", "sample_layers_lock.json", "decoded_cache_lock.json")
 
 
+def materialize_decoded_snapshot(root):
+    """Download only a frozen snapshot's selected arrays for local training.
+
+    This reads R2 and writes local data; it does not expand the snapshot or
+    request reserved test arrays. Existing matching downloads can be reused.
+    """
+    from .dataset_generation import capture_lock
+    from .decoded_cache import ARRAYS, verify_decoded_frame
+    root = Path(root).resolve()
+    record = read_json(root/SOURCE_RECORD)
+    if record.get("layout") != "decoded":
+        raise ValueError("Local materialization requires a decoded R2 snapshot")
+    source = R2FrameSource(root, record["source"], layout="decoded")
+    source.preflight()
+    downloaded = reused = total = frames = 0
+    with capture_lock(root):
+        if joint_inventory(root, record["selected"], verify_images=False) != record["inventory"]:
+            raise ValueError("R2 snapshot inventory changed before local materialization")
+        descriptor = read_v5_dataset(root)
+        for partition in ("train", "validation"):
+            for group in record["selected"][partition]:
+                for index in range(descriptor["groups"][group]["frame_count"]):
+                    _, metadata = verify_decoded_frame(root, group, index, verify_hashes=False, allow_missing=True)
+                    for filename in ARRAYS:
+                        key = f"decoded/{group}/frame_{index:06d}/{filename}"
+                        expected = metadata["arrays"][filename]
+                        path = root/key
+                        if path.exists():
+                            if path.stat().st_size != expected["size"] or digest(path) != expected["sha256"]:
+                                raise ValueError(f"Existing local array checksum mismatch: {key}")
+                            reused += 1
+                        else:
+                            source.client.download_file(key, path, sha256=expected["sha256"], size=expected["size"])
+                            downloaded += 1
+                        total += expected["size"]
+                    verify_decoded_frame(root, group, index, verify_hashes=False)
+                    frames += 1
+                    print(f"Local pilot frame ready: {group}/{index} ({frames} frames)", flush=True)
+    return {"root":str(root), "frames":frames, "payload_bytes":total,
+            "downloaded_objects":downloaded, "reused_objects":reused, "test_pixels_loaded":False}
+
+
 def image_keys(group, index, layout):
     relative = f"{group}/frame_{index:06d}"
     if layout not in ("v5", "inline"):

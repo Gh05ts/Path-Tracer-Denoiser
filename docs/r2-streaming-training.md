@@ -1,5 +1,9 @@
 # R2 streaming training plan
 
+For a production-size diagnostic using four completed clips while backfills are
+pending, follow the [H100 pilot guide](h100-ready-pilot.md). It downloads about
+10 GB once, trains locally, and generates a readable resource/timing report.
+
 ## Scope and current implementation
 
 The production dataset is generated exclusively by the **v4 capture tools** and
@@ -68,17 +72,18 @@ later 1/2/8/16/32-SPP backfills through the same v4 object layout. The existing
 4-SPP image supplies the fourth layer; base images, guides and references stay
 at their original keys. There is no synthetic replacement for missing layers.
 
-The future backfill capture/publisher must produce this contract:
+The [backfill capture/publisher](../distributed/BACKFILL.md) produces this contract:
 
 1. Keep the existing `sample_layers_lock.json` and its original capture boundary
    unchanged. Write `sample_layer_configs/GROUP.json` for each backfilled clip:
    its original base config plus `sample_layers` and `reserved_reference_samples`
    matching the established disjoint sample allocation.
 2. Publish `sample_layers/GROUP/frame_NNNNNN/layers.exr` and its manifest for every
-   frame. Match each base manifest's camera, scene/render fingerprints, integrator
-   and render settings. BMW requires the original integrator-11 layer renderer;
-   the first two Bistro clips require integrator 12. A matching config alone is
-   insufficient if the layer manifest declares another integrator.
+   frame. Match each base manifest's camera, scene identity, sample allocation,
+   and render settings. The runner uses integrator 12 for both BMW and Bistro.
+   BMW's integrator-11 bases use a narrowly validated compatibility binding to
+   the preserved BMW comparison; its new layers retain their real integrator-12
+   provenance and fingerprints. Other cross-integrator combinations are rejected.
 3. Verify and publish a current-lock scene archive receipt containing the original
    base image/manifest pairs, the new layer image/manifest pairs, and hashes of
    every backfilled per-clip config. The shared v4 archiver now treats separately
@@ -88,8 +93,8 @@ The future backfill capture/publisher must produce this contract:
 4. Prepare a **new** local metadata snapshot after publication. Existing snapshots
    stay frozen; a run cannot silently adopt newly added backfill frames on resume.
 
-The adapter and archival inclusion are implemented. Generating the deferred
-layers and publishing their updated receipts remain future work. Simply uploading
+The adapter, archival inclusion, and separate backfill runner are implemented.
+Run the backfill queue after generation finishes. Simply uploading
 unregistered EXRs, editing an old receipt, or relabelling an incomplete clip does
 not make it eligible. Until completion, select only ready clips explicitly;
 requesting the full training partition will reject missing backfills.

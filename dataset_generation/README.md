@@ -167,6 +167,10 @@ including the stopped clip. This is separate from the 304 frames missing
 additional SPP layers in `SAMPLE_LAYERS_BACKFILL.md`. Existing archived EXRs
 must be retrieved for backfill; original integrator provenance and sample
 ranges are retained. These backfills are not run by enabling future decoding.
+After generation completes, follow the [two-machine backfill commands](../distributed/BACKFILL.md).
+That runner uses integrator 12 on both hosts and records the explicit audited
+BMW integrator-11 source / integrator-12 layer compatibility without relabelling
+the original or new images.
 
 For joint training, `train-joint-decoded.json` points at the inline dataset.
 Download decoded arrays and all metadata (including the base and companion

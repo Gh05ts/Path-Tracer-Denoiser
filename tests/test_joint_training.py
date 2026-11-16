@@ -92,8 +92,10 @@ def test_joint_crops_keep_layer4_and_guides_aligned(joint_dataset):
     assert torch.equal(state,torch.get_rng_state())
 
 
-def test_two_epochs_equal_one_epoch_plus_resume_cpu(joint_dataset,tmp_path):
-    path,config = config_for(joint_dataset)
+@pytest.mark.parametrize("gradient_floor", [None,1e-6])
+def test_two_epochs_equal_one_epoch_plus_resume_cpu(joint_dataset,tmp_path,gradient_floor):
+    options = {} if gradient_floor is None else {"radiance_gradient_floor":gradient_floor}
+    path,config = config_for(joint_dataset,**options)
     full = train_joint(path,tmp_path/"full","cpu")
     config["epochs"] = 1
     path.write_text(json.dumps(config))
@@ -112,6 +114,14 @@ def test_two_epochs_equal_one_epoch_plus_resume_cpu(joint_dataset,tmp_path):
     assert history[0]["train"]["sampler_gradient_norm"] > 0
     assert history[0]["train"]["denoiser_gradient_norm"] > 0
     assert full["test_pixels_loaded"] is False
+    performance = full["performance"]
+    assert performance["process_lifetime_peak_rss_bytes"] > 0
+    assert performance["cuda_peak_allocated_bytes"] is None
+    assert len(performance["epochs"]) == 2
+    for timing in performance["epochs"]:
+        assert timing["training_steps"] == timing["validation_windows"] == 4
+        assert 0 <= timing["training_data_seconds"] <= timing["training_seconds"]
+        assert timing["epoch_seconds"] >= timing["training_seconds"]+timing["validation_seconds"]
 
 
 def test_joint_inventory_never_opens_reserved_test_bytes(joint_dataset,monkeypatch):

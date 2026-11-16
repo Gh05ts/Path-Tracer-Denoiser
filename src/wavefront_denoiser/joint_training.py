@@ -4,6 +4,8 @@ import json
 import math
 from pathlib import Path
 import random
+import resource
+import time
 
 import numpy as np
 import torch
@@ -16,6 +18,7 @@ from .joint_checkpoint import joint_optimizer, load_joint_checkpoint, restore_jo
 from .joint_data import JointPatchDataset, joint_inventory, joint_dataset_read_lock
 from .loss import sequence_loss
 from .model import INPUT_CHANNELS
+from .ntasad_radiance import radiance_gradient_policy
 from .training_defaults import joint_training_config
 
 
@@ -24,12 +27,16 @@ def training_config(path):
     root = read_json(path)
     defaults = joint_training_config()
     if (root.get("format") != defaults["format"] or type(root.get("version")) is not int or root["version"] != 1
-            or root.keys()-(defaults.keys() | {"r2_streaming"})):
+            or root.keys()-(defaults.keys() | {"r2_streaming", "radiance_gradient_floor"})):
         raise ValueError("Invalid or unknown joint training options; use train-joint.json, not the historical plan")
     config = dict(defaults,**root)
     if not isinstance(config["data_root"],str) or not config["data_root"]:
         raise ValueError("Joint training needs data_root")
     config["data_root"] = str((path.parent/config["data_root"]).resolve())
+    # Keep this optional so historical configs/checkpoints retain their exact
+    # comparison semantics. The field is pinned when stabilization is enabled.
+    with radiance_gradient_policy(config.get("radiance_gradient_floor", 0.)):
+        pass
     if "r2_streaming" in config:
         streaming = config["r2_streaming"]
         if (not isinstance(streaming, dict) or set(streaming)-{"source", "layout", "spool_directory"}
@@ -104,6 +111,7 @@ def evaluate_joint(model,dataset,device):
 
 
 def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=None):
+    started = time.perf_counter()
     output = Path(output)
     if output.exists():
         raise FileExistsError(f"Joint training output already exists: {output}")
@@ -125,6 +133,8 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         length=config["window_length"],patch_size=config["validation_patch_size"],
         patches_per_window=config["validation_crops_per_window"],augment=False,frame_source=frame_source)
     device = select_device(device_name)
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
     torch.set_num_threads(config["cpu_threads"])
     random.seed(config["seed"]); np.random.seed(config["seed"]); torch.manual_seed(config["seed"])
     torch.backends.cudnn.benchmark = False
@@ -152,7 +162,14 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         epoch0,global_step = progress["epoch"],progress["global_step"]
     loader = torch.utils.data.DataLoader(train,batch_size=config["batch_size"],shuffle=True,
                                         num_workers=0,generator=generator)
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    setup_seconds = time.perf_counter()-started
+    initial_started = time.perf_counter()
     initial = evaluate_joint(model,validation,device)
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    initial_seconds = time.perf_counter()-initial_started
     output.mkdir(parents=True,exist_ok=False)
     for name,value in (("config.json",config),("inventory.json",provenance)):
         (output/name).write_text(json.dumps(value,indent=2,allow_nan=False)+"\n")
@@ -161,11 +178,17 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         save_joint_checkpoint(output/name,model,optimizer=optimizer,epoch=epoch,global_step=global_step,
                               config=config,dataset_split=provenance,generator=generator)
     save("model.pt",epoch0)
+    epoch_timings = []
     for epoch in range(epoch0+1,config["epochs"]+1):
+        epoch_started = time.perf_counter()
+        step0 = global_step
         model.train()
         totals = {}
         paths = pixels = windows = 0
+        data_seconds = 0.
+        waiting = time.perf_counter()
         for batch in loader:
+            data_seconds += time.perf_counter()-waiting
             buffers,layers,reference = _batch(batch,device)
             optimizer.zero_grad(set_to_none=True)
             prediction = model.forward_sequence(buffers,layers,training_reference=reference,transformed=True)
@@ -186,22 +209,46 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
                 totals[key] = totals.get(key,0.)+float(value.detach())*count
             paths += int(prediction.counts.sum())
             pixels += prediction.counts.numel()
+            waiting = time.perf_counter()
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        train_seconds = time.perf_counter()-epoch_started
+        validation_started = time.perf_counter()
         measured = evaluate_joint(model,validation,device)
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        validation_seconds = time.perf_counter()-validation_started
         record = {"epoch":epoch,"global_step":global_step,
             "train":{**{k:v/windows for k,v in totals.items()},"replayed_paths":paths,"replayed_pixels":pixels},
             "validation":measured}
-        with (output/"history.jsonl").open("a") as stream:
-            stream.write(json.dumps(record,allow_nan=False)+"\n")
-        print(json.dumps(record,allow_nan=False),flush=True)
+        checkpoint_started = time.perf_counter()
         if measured["loss"] < best_loss:
             best_loss,best_epoch,best = measured["loss"],epoch,measured
             save("model.pt",epoch)
         save("last.pt",epoch)
+        timing = {"epoch":epoch,"training_seconds":train_seconds,"training_data_seconds":data_seconds,
+            "training_steps":global_step-step0,"training_windows":windows,
+            "validation_seconds":validation_seconds,"validation_windows":len(validation),
+            "checkpoint_seconds":time.perf_counter()-checkpoint_started,
+            "epoch_seconds":time.perf_counter()-epoch_started}
+        epoch_timings.append(timing)
+        record["timing"] = timing
+        with (output/"history.jsonl").open("a") as stream:
+            stream.write(json.dumps(record,allow_nan=False)+"\n")
+        print(json.dumps(record,allow_nan=False),flush=True)
     summary = {"device":str(device),"parameters":sum(p.numel() for p in model.parameters()),
         "completed_epochs":config["epochs"],"global_step":global_step,"best_epoch":best_epoch,
         "best_validation":best,"initial_validation":initial,"checkpoint":"model.pt","resume_checkpoint":"last.pt",
         "resumed_from":str(resume) if resume else None,"selection_scope":"this_run_including_initial_model",
         "config":config,"test_pixels_loaded":False}
+    summary["performance"] = {"setup_seconds":setup_seconds,"initial_validation_seconds":initial_seconds,
+        "total_seconds":time.perf_counter()-started,"epochs":epoch_timings,
+        "process_lifetime_peak_rss_bytes":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+        "cuda_peak_allocated_bytes":torch.cuda.max_memory_allocated(device) if device.type == "cuda" else None,
+        "cuda_peak_reserved_bytes":torch.cuda.max_memory_reserved(device) if device.type == "cuda" else None,
+        "gpu_name":torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+        "torch_version":str(torch.__version__),"cuda_version":torch.version.cuda,
+        "cudnn_version":torch.backends.cudnn.version()}
     if frame_source is not None:
         summary["r2_streaming"] = dict(frame_source.stats)
     (output/"summary.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
@@ -221,7 +268,7 @@ def train_joint(config_path,output,device_name="auto",*,resume=None):
     warn = torch.is_deterministic_algorithms_warn_only_enabled()
     cudnn = torch.backends.cudnn.deterministic,torch.backends.cudnn.benchmark
     try:
-        with joint_dataset_read_lock(config["data_root"]):
+        with joint_dataset_read_lock(config["data_root"]), radiance_gradient_policy(config.get("radiance_gradient_floor", 0.)):
             frame_source = None
             if "r2_streaming" in config:
                 from .r2_streaming import R2FrameSource
