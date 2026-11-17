@@ -1,6 +1,7 @@
 """Fresh-machine R2 model round trip and reference-free native presentation."""
 import importlib.util
 import json
+import math
 from pathlib import Path
 import shutil
 import sys
@@ -132,5 +133,42 @@ def test_prepare_full_inventory_never_downloads_arrays(decoded_cloud, tmp_path):
     assert not list(output.rglob('*.npy'))
     assert all(not urlsplit(url).path.endswith(('.npy', '.exr')) for _, url in api.calls)
     config = json.loads((output/'train.json').read_text())
+    assert config['format'] == 'wavefront-ntasad-joint-training'
+    assert config['denoiser_channels'] == config['sampler_channels'] == 48
+    assert config['learning_rate'] == 1e-4 and config['sampler_learning_rate'] == 1e-5
+    assert config['radiance_gradient_floor'] == 1e-3
     assert config['allocation_policy'] == 'minimum_one_exact_v1'
     assert config['checkpoint_every_epochs'] == 1 and config['max_training_seconds'] == 86400
+
+
+def test_final_profile_cli_updates_both_networks(decoded_cloud, tmp_path):
+    from wavefront_denoiser.cli import main
+    from wavefront_denoiser.r2_streaming import materialize_decoded_snapshot
+
+    output = tmp_path/'final-prep'
+    tool('prepare_final_run').prepare(output, source='r2://bucket/dataset', hours=35)
+    materialize_decoded_snapshot(output/'data')
+    config = json.loads((output/'train.json').read_text())
+    # A separate tiny technical smoke keeps the final model, learning rates,
+    # allocation/backward policies and fused loader, reducing only workload.
+    config.update(epochs=1, batch_size=1, patch_size=5, patches_per_window=1,
+                  validation_patch_size=5, validation_crops_per_window=1, cpu_threads=1)
+    path = output/'train-smoke.json'
+    path.write_text(json.dumps(config))
+    run = output/'smoke'
+    assert main(['train-adaptive', str(path), str(run), '--device', 'cpu']) == 0
+    initial, _ = load_joint_checkpoint(run/'initial.pt')
+    trained, payload = load_joint_checkpoint(run/'last.pt')
+    history = json.loads((run/'history.jsonl').read_text().splitlines()[0])
+    assert payload['global_step'] > 0
+    for name in ('sampler', 'denoiser'):
+        norm = history['train'][name+'_gradient_norm']
+        assert math.isfinite(norm) and norm > 0
+        before, after = getattr(initial, name).state_dict(), getattr(trained, name).state_dict()
+        assert any(not torch.equal(before[key], after[key]) for key in before)
+        assert all(torch.isfinite(value).all() for value in after.values())
+    for metrics in (history['train'], history['validation']):
+        assert all(math.isfinite(metrics[key]) for key in ('loss', 'spatial_l1', 'temporal_l1'))
+        assert metrics['actual_spp'] == 4
+        assert metrics['replayed_paths'] == 4*metrics['replayed_pixels']
+        assert metrics['zero_fraction'] == metrics['unavailable_fraction'] == 0

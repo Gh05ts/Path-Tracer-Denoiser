@@ -26,6 +26,35 @@ LR 1e-4 / sampler LR 1e-5, backward radiance floor 1e-3, seed seven, float32,
 full recurrence, and deterministic execution. These are documented engineering
 choices; the minimum-one policy cannot demonstrate learned zero-sample behavior.
 
+## Intended run: joint sampler and denoiser training
+
+The final run **co-trains both networks from fresh weights**. The
+`train-adaptive` command calls `train_joint`, whose Adam optimizer includes the
+sampler at LR `1e-5` and the denoiser at LR `1e-4`. Both update on every training
+batch through the recurrent reconstruction loss; neither network is frozen.
+The uniform first frame initializes history, and the remaining four frames use
+learned allocation. It is not a denoiser-only run or a staged warm start.
+
+Keep joint training as the chosen experiment despite the earlier screen's
+no-candidate result. Evaluate matched-budget native adaptive and same-denoiser
+uniform inference, including fixed detail crops of disocclusions, specular
+regions and penumbras where present in the development clips. Report regional
+and temporal behavior alongside aggregate quality; neither stability nor a few
+favorable crops establishes an overall sampling advantage. This run does not
+restrict learning to those regions or assume adaptive sampling helps only there.
+
+The technical smoke must show finite, nonzero gradient norms **and changed
+weights in both networks**, exact 4-SPP allocation, and no unavailable outputs
+before the long run. Minimum-one allocation, the smaller sampler LR and the
+radiance backward floor reduce known risks; fresh-machine CUDA stability still
+needs verification. If the smoke fails, diagnose it before launching rather than
+silently switching to denoiser-only training.
+
+The approved wall-time ceiling for this run is **36 hours**, allowing the
+estimated sub-24-hour run to overrun. Use `--hours 35` for preparation's soft
+training budget and `--hours 36` for the outer training guard, reserving one hour
+for startup and overrun protection. The commands below use these approved budgets.
+
 ## 1. Bootstrap
 
 Use a Linux CUDA machine with an NVIDIA driver compatible with PyTorch 2.7.0
@@ -63,17 +92,35 @@ permission on the **same `denoiser` bucket**, under `model-runs/`. The native R2
 client reads only these environment variables; it does not read `~/.aws` or old
 capture-launcher constants.
 
+Enter the S3 access-key pair directly in the GPU server's Bash terminal. Hidden
+prompts keep the credential values out of shell history; do not paste them into
+chat. The account ID is the 32-character Cloudflare account ID:
+
+```bash
+set +x
+read -rsp 'R2 Access Key ID: ' R2_ACCESS_KEY_ID
+printf '\n'
+read -rsp 'R2 Secret Access Key: ' R2_SECRET_ACCESS_KEY
+printf '\n'
+read -rp 'Cloudflare Account ID: ' R2_ACCOUNT_ID
+export R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ACCOUNT_ID
+unset R2_ENDPOINT_URL
+```
+
+These exports last for this shell and its children. Re-enter them in a new shell
+when downloading or uploading; the repository does not persist credentials.
+
 ## 2. Freeze the data and actual budget
 
-No duration or smaller final selection was specified for this handoff. Preparation
-therefore requires `--hours`; **24 below is an example**, not a newly authorized
-training job. The default requests every original training and validation clip.
+Preparation requires `--hours`; the command below uses the approved soft budget
+for the intended joint run. The default requests every original training and
+validation clip.
 Preparation fails if any selected decoded backfill or current-lock receipt is
 missing. It never silently drops clips or reads reserved test pixels.
 
 ```bash
 export FINAL_ROOT="$QUALITY_RUN_ROOT/final-01"
-python tools/prepare_final_run.py "$FINAL_ROOT" --hours 24 --epochs 1000
+python tools/prepare_final_run.py "$FINAL_ROOT" --hours 35 --epochs 1000
 cat "$FINAL_ROOT/plan.json"
 ```
 
@@ -153,19 +200,38 @@ can be exceeded by that first epoch. If the guard expires, use the measured
 partial throughput to adjust the budget or explicitly prepare a smaller
 technical subset, while retaining the larger final selection separately.
 
-Once the data, machine smoke, and chosen budget are satisfactory, explicitly run:
+Once the data, machine smoke, and chosen budget are satisfactory, explicitly
+launch from an interactive Bash shell. This survives an ordinary SSH disconnect:
 
 ```bash
-python tools/run_with_memory_guard.py --hours 25 \
+nohup python -u tools/run_with_memory_guard.py --hours 36 --gpu-id 0 \
   --log "$FINAL_ROOT/train.log" --module wavefront_denoiser \
-  -- train-adaptive "$FINAL_ROOT/train.json" "$FINAL_ROOT/train" --device cuda
+  -- train-adaptive "$FINAL_ROOT/train.json" "$FINAL_ROOT/train" --device cuda \
+  > "$FINAL_ROOT/launcher.log" 2>&1 < /dev/null &
+TRAIN_GUARD_PID=$!
+printf '%s\n' "$TRAIN_GUARD_PID" > "$FINAL_ROOT/train-guard.pid"
+disown
 ```
 
-For the 24-hour example, the trainer requests an epoch-boundary stop with measured
-validation/checkpoint reserve inside 24 hours; the outer **25-hour** ceiling
-includes startup hashing and overrun protection. Adjust both to your actual
-budget. The trainer may finish an epoch beyond its soft budget; the guard is the
-outer deadline and can interrupt an epoch. It saves `last.pt` every completed
+The machine must remain running. Do not launch this twice for the same output;
+training/log directories must be new. Monitor with:
+
+```bash
+tail -f "$FINAL_ROOT/train.log"
+```
+
+`Ctrl+C` exits `tail`, leaving training running. After reconnecting, source
+`tools/activate.sh` again and restore `FINAL_ROOT="$QUALITY_RUN_ROOT/final-01"`.
+The guard writes its status only when it exits:
+
+```bash
+cat "$FINAL_ROOT/train.log.status.json"
+```
+
+The trainer requests an epoch-boundary stop with measured validation/checkpoint
+reserve inside 35 hours; the outer **36-hour** ceiling includes startup hashing
+and overrun protection. The trainer may finish an epoch beyond its soft budget;
+the guard is the outer deadline and can interrupt an epoch. It saves `last.pt` every completed
 epoch. Validation runs in epochs 1–5, every fifth epoch, and at final stop;
 `model.pt` selects the best evaluated state including initialization.
 `best-trained.pt` selects the best evaluated trained state separately. Do not
@@ -189,6 +255,12 @@ reserved test pixels. The generated presentation includes a same-denoiser unifor
 control; a separately trained uniform denoiser is an additional experiment.
 
 ## 4. Export weights before retiring any training machine
+
+Follow [checkpoint selection and R2 use](docs/checkpoint-selection-and-r2-use.md)
+to compare initialization, crop-selected best, best trained and last weights,
+check native adaptive/uniform behavior, choose an export, and restore it for
+inference or continued training. Upload is a separate command, not an automatic
+post-training action.
 
 Choose the validation-selected checkpoint after comparing it to initialization
 and the trained best. The following exports a compact loadable inference model,

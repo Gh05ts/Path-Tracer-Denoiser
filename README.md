@@ -1,4 +1,5 @@
 > **Final run on a new machine:** start with [FINAL_RUN_HANDOFF.md](FINAL_RUN_HANDOFF.md).
+> [Compare checkpoints, select weights and restore them from R2](docs/checkpoint-selection-and-r2-use.md).
 > [Post-run crops, native images and GIFs](docs/post-run-presentation.md) use R2 data and exported model weights.
 
 # Wavefront denoiser
@@ -9,11 +10,14 @@ scales, a temporal filter for warped history, and their blend weights. Spatial
 and temporal filtering train together through one sequence loss and produce one
 checkpoint. The earlier independent residual spatial model has been removed.
 
-The paper's second network is the **adaptive sampler**. It is not implemented
-here yet; current inputs are uniformly sampled. This is a reconstruction of the
-published denoiser, not a claim of paper-quality results or exact author code.
-See the [paper audit and model API](docs/ntasad-progress.md) for architecture,
-source links, implementation choices and remaining differences.
+The **adaptive sampler** is implemented alongside the denoiser in the joint
+model. The final workflow uses `train-adaptive` to train both networks on
+independent sample-layer replay; see [joint training](docs/joint-training.md)
+and the handoff above. The uniform-only training/inference commands below remain
+available for the separate uniform model and checkpoint format. This is not a
+claim of paper-quality results, exact author code, or established adaptive
+sampling gains. See the [fidelity audit](docs/ntasad-fidelity-audit.md) for the
+implemented policies and remaining differences.
 
 ## Set up
 
@@ -23,8 +27,8 @@ source .venv/bin/activate
 python -m pip install -e '.[train,test]'
 ```
 
-The local environment is `/tmp/ntasad-venv/bin/python`. Use that interpreter in
-place of `python3` if the environment is not activated.
+Source `tools/activate.sh` from this checkout to select its `.venv`, source tree
+and portable run-directory environment.
 
 ## View captured EXR images
 

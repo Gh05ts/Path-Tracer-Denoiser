@@ -34,3 +34,31 @@ actual completed-data receipt audit, disk/throughput measurement, live model
 upload/readback and final native quality evaluation remain run-time steps in the
 handoff. Existing experimental quality evidence and its no-candidate result are
 preserved separately.
+
+## Joint-run verification, 2026-11-17
+
+The intended final experiment remains fresh joint sampler/denoiser training,
+with a 35-hour soft budget and the user's approved 36-hour outer ceiling.
+The focused handoff/stability/checkpoint/cadence selection now passes all
+**36 tests** on CPU (Torch 2.7.0, NumPy 1.21.5, Pillow 9.0.1, OpenEXR 3.5.2).
+The new integration test prepares and materializes receipt-bound tiny decoded
+arrays through fake R2, then invokes `train-adaptive` with the generated final
+profile's 48-channel networks, learning rates, backward floor and fused loader.
+Only workload dimensions and CPU threads are reduced for the technical smoke.
+It confirms finite nonzero gradients and changed weights in both networks,
+finite spatial/temporal losses, exact 4-SPP path counts, and zero unavailable
+outputs. This establishes CPU execution of joint updates, not long-run quality
+or GPU stability. Existing NumPy deprecation warnings were non-failing.
+
+This workspace has no usable NVIDIA driver/device and no configured R2
+environment credentials. No live dataset audit/download, CUDA smoke, final
+training or model upload was performed. Those runtime steps remain required
+before treating the run as launched or stable on the training machine.
+
+The checkpoint-selection/R2-use guide's ten Bash blocks pass `bash -n`, all
+four embedded Python snippets parse and execute against retained tiny fixture
+artifacts, and local Markdown links resolve. These checks exercise checkpoint
+score lookup, local bundle creation for all four saved states, native report
+aggregation and recovered-bundle validation. The handoff/README/presentation
+Bash blocks also pass syntax checks, and `git diff --check` passes. The native
+aggregation check uses fixture reports; it is not a new production evaluation.

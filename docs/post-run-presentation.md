@@ -1,5 +1,9 @@
 # Post-run presentation images, crops and GIFs
 
+First [compare checkpoints and select/export weights](checkpoint-selection-and-r2-use.md).
+That guide also covers verified R2 recovery and the distinction between
+same-denoiser uniform inference and a separately trained uniform baseline.
+
 Start from [the final-run handoff](../FINAL_RUN_HANDOFF.md) on the inference
 machine. The trained bundle must already be exported to R2. Activate the new
 clone's venv with `source tools/activate.sh` and supply the R2 read credentials.
