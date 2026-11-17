@@ -243,6 +243,11 @@ This defaults to one reproducible validation clip per scene. Use
 all PNG/EXR/GIF products. The generator fetches hash-verified frame arrays from
 the dataset's original R2 location and releases temporary frame files as it goes.
 The model bundle alone does not replace access to that dataset.
+After freezing checkpoint selection and preparing validation images, follow
+the [presentation guide's fixed Sponza step](post-run-presentation.md) to render
+`sponza_view_00_circle_slow` from this same bundle. This adds held-out comparison
+images, crops and a GIF to presentation preparation without using test results
+for checkpoint selection.
 
 Alternatively, replace `--bundle ...` with
 `--model-r2 r2://denoiser/model-runs/final-01-selected` to download and infer in

@@ -69,9 +69,9 @@ git clone --branch main https://github.com/Gh05ts/Path-Tracer-Denoiser.git
 cd Path-Tracer-Denoiser
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
+python -m pip install --upgrade pip 'setuptools>=64' wheel
 python -m pip install 'torch==2.7.0'
-python -m pip install -e '.[train,test]'
+python -m pip install --no-build-isolation -e '.[train,test]'
 source tools/activate.sh
 mkdir -p "$QUALITY_RUN_ROOT"
 python -c 'import torch,wavefront_denoiser; print(wavefront_denoiser.__file__); print(torch.__version__,torch.cuda.is_available(),torch.cuda.get_device_name(0))'
@@ -83,6 +83,40 @@ nvidia-smi
 script: it selects this clone's venv and puts this clone's `src` first. Source it
 in each new shell, from the repository. Set `QUALITY_RUN_ROOT` before sourcing
 if a larger local disk should hold the sibling runs directory.
+
+The `(.venv)` prompt only identifies the active interpreter; the project must
+also be installed. Upgrading the build tools first and using
+`--no-build-isolation` avoids the old-backend/missing-`build_editable` failure.
+Verify that the editable install works without a shell-provided source path:
+
+```bash
+env -u PYTHONPATH .venv/bin/python -c 'import wavefront_denoiser; print(wavefront_denoiser.__file__)'
+```
+
+If that reports `No module named wavefront_denoiser`, repair the existing venv
+from this repository. This installs the local project without changing Torch,
+NumPy, Pillow or OpenEXR:
+
+```bash
+.venv/bin/python -m pip install --upgrade 'setuptools>=64' wheel
+.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+env -u PYTHONPATH .venv/bin/python -c 'import wavefront_denoiser; print(wavefront_denoiser.__file__)'
+```
+
+After reconnecting, `cd` to this clone and restore the shell environment before
+running later sections. Keep your original `QUALITY_RUN_ROOT` if customized:
+
+```bash
+source tools/activate.sh
+export FINAL_ROOT="$QUALITY_RUN_ROOT/final-01"
+test -f "$FINAL_ROOT/train.json" && printf 'Prepared run: %s\n' "$FINAL_ROOT"
+```
+
+`FINAL_ROOT` is not persisted across shells. An empty value makes the config
+snippet look for `train.json` in the current directory and places a log such as
+`"$FINAL_ROOT/smoke.log"` at `/smoke.log`. Restore the variable rather than using
+`sudo` or changing filesystem permissions. Source activation alone does not
+create a smoke config; complete the preparation block in section 3 first.
 
 Set these environment variables privately (do not paste tokens into committed
 files or commands recorded in shared logs): `R2_ACCESS_KEY_ID`,
@@ -163,7 +197,18 @@ R2 snapshots stay frozen. If remote locks have advanced incompatibly, prepare a
 new snapshot; never edit receipt hashes. `prepare_final_run.py --materialize`
 combines preparation/download for a new output directory, with a disk check.
 
+Decoded payloads are stored at
+`$FINAL_ROOT/data/decoded/CLIP/frame_NNNNNN/{float,uint}.npy`, including the
+already-generated BMW/Bistro backfills selected by the frozen inventory.
+Files keep a `.partial` suffix until their download and checksum verification
+finish. Completion is recorded in `materialize.log.status.json`: require
+`"reason": "completed"` **and** `"exit_code": 0`. `tail -f` remains open after
+the writer exits; `Ctrl+C` leaves the saved data intact.
+
 ## 3. Verify the machine, then launch explicitly
+
+Run the shell-restoration and import checks above first. The CPU tests below
+use small fixture datasets; they do not train on the full downloaded archive.
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 \
@@ -179,26 +224,59 @@ wall budget. The smoke's changes are a separate experiment, not a resume. Preser
 its config and timings. CPU tests do not establish fresh-machine CUDA throughput,
 convergence, or GPU resume parity.
 
-To make that separate smoke configuration without changing the final config:
+To make that separate smoke configuration without changing the final config,
+run this entire block from the repository. Choose a fresh `SMOKE_NAME` for each
+attempt (`smoke-01`, `smoke-02`, etc.); the config, log, and output directory all
+share that name. The guard runs only if config preparation succeeds:
 
 ```bash
-python - "$FINAL_ROOT" <<'PYCODE'
+source tools/activate.sh
+export FINAL_ROOT="$QUALITY_RUN_ROOT/final-01"
+SMOKE_NAME=smoke-01
+if python - "${FINAL_ROOT:?Restore FINAL_ROOT first}" "$SMOKE_NAME" <<'PYCODE'
 import json, pathlib, sys
-root = pathlib.Path(sys.argv[1])
+if not sys.argv[1]:
+    raise SystemExit('FINAL_ROOT must point to the prepared run')
+root = pathlib.Path(sys.argv[1]).resolve()
+name = sys.argv[2]
+paths = [root/(name+suffix) for suffix in ('.json', '.log', '.log.status.json', '.log.provenance.json', '')]
+if any(path.exists() for path in paths):
+    raise SystemExit('Choose a new SMOKE_NAME; preserve previous configs, logs and outputs')
 c = json.loads((root/'train.json').read_text())
 c['data_root'] = str((root/'data').resolve())
 c.update(epochs=1, batch_size=1, patches_per_window=1, max_training_seconds=1800)
-(root/'train-smoke.json').write_text(json.dumps(c, indent=2)+'\n')
+with paths[0].open('x') as stream:
+    stream.write(json.dumps(c, indent=2)+'\n')
+print('Prepared smoke config:', paths[0])
 PYCODE
+then
 python tools/run_with_memory_guard.py --hours 1 \
-  --log "$FINAL_ROOT/smoke.log" --module wavefront_denoiser \
-  -- train-adaptive "$FINAL_ROOT/train-smoke.json" "$FINAL_ROOT/smoke" --device cuda
+  --log "$FINAL_ROOT/$SMOKE_NAME.log" --module wavefront_denoiser \
+  -- train-adaptive "$FINAL_ROOT/$SMOKE_NAME.json" "$FINAL_ROOT/$SMOKE_NAME" --device cuda
+fi
 ```
 
 The smoke processes the full selected inventory for one epoch; its soft budget
 can be exceeded by that first epoch. If the guard expires, use the measured
 partial throughput to adjust the budget or explicitly prepare a smaller
 technical subset, while retaining the larger final selection separately.
+This is a full-data, full-network GPU check, reduced to one epoch, one training
+crop/window and batch one; it is not a tiny subset run. Its soft budget is
+30 minutes and the guard's outer limit is one hour. Initial local data hashing
+may be quiet before GPU utilization rises.
+
+If an attempt exits, inspect both files before retrying:
+
+```bash
+cat "$FINAL_ROOT/$SMOKE_NAME.log.status.json"
+tail -n 80 "$FINAL_ROOT/$SMOKE_NAME.log"
+```
+
+`"reason": "completed"` means the child process exited; an `exit_code` of 1
+still means failure. A three-second exit with `No module named
+wavefront_denoiser` is an environment/install failure, not a training or GPU
+result. Apply the editable-install repair in section 1, choose a new
+`SMOKE_NAME`, and rerun the complete smoke block. Never overwrite failed logs.
 
 Once the data, machine smoke, and chosen budget are satisfactory, explicitly
 launch from an interactive Bash shell. This survives an ordinary SSH disconnect:
@@ -312,14 +390,21 @@ Follow [post-run presentation instructions](docs/post-run-presentation.md).
 The generator restores the model from R2 and downloads the selected native
 4-SPP image, guides, independent layers and reference through the existing
 receipt-bound decoded loader. It runs actual inference, never image synthesis.
-The documented presentation command uses `--include-test` to include Sponza
-alongside Bathroom and Classroom after the validation-selected checkpoint is
-frozen. It records the checkpoint and evaluation protocol before reading test
-pixels and prepares separate receipt-verified test metadata. Training scenes
+The documented presentation preparation renders Bathroom and Classroom first,
+then the fixed Sponza test clip `sponza_view_00_circle_slow` in a separate step
+using the same restored, validation-selected checkpoint. The Sponza step uses
+`--include-test --groups sponza_view_00_circle_slow`; it produces native
+comparisons, detail crops, HDR images and a GIF. Use the validation and Sponza
+indexes together when assembling the presentation, and verify that both reports
+are complete and have the same checkpoint hash. The generator records the
+checkpoint and evaluation protocol before reading test pixels and prepares
+separate receipt-verified test metadata. Training scenes
 are excluded; training preparation/materialization remains train+validation only.
 Use `--all-validation --include-test --all-test` for all 36 validation and 18
 Sponza test clips. Keep the two splits' metrics separate and do not tune against
-Sponza results. Omit `--include-test` for development-only validation images.
+Sponza results. Add `--include-test` to the validation presentation command for
+a single combined directory instead of separate steps. The Sponza presentation
+clip is not added to training or smoke data.
 
 For the next agent: read this file first, inspect `plan.json` and all run evidence,
 retain the 80% resource ceiling, keep artifacts outside source, preserve dataset

@@ -85,3 +85,29 @@ The updated handoff's 11 Bash blocks and presentation guide's three Bash blocks
 pass syntax checks; local Markdown links resolve and `git diff --check` passes.
 No production Sponza inference or live R2 test download was performed for this
 change; data availability and GPU throughput remain runtime checks.
+
+## Shell recovery and fixed Sponza preparation, 2026-11-17
+
+The handoff now restores `FINAL_ROOT` after reconnecting, installs/upgrades build
+tools before the local editable install, and verifies imports with `PYTHONPATH`
+removed. The existing venv was repaired with setuptools 84.2.1 and an editable
+`--no-deps --no-build-isolation` project install. Torch 2.7.0, NumPy 1.21.5,
+Pillow 9.0.1 and OpenEXR 3.5.2 stayed unchanged. A real CPU guard worker ran the
+module's CLI help with no `PYTHONPATH` and exited zero. This verifies import and
+launch plumbing, not CUDA training success.
+
+All 35 Bash blocks across the handoff, README, presentation and checkpoint-use
+guides pass `bash -n`; their five embedded Python snippets parse and local
+Markdown links resolve. The revised smoke block was executed in a temporary
+run directory with the guard replaced by a recording stub: it created the
+intended one-epoch/batch-one config with an absolute data path, preserved the
+final config, rejected a reused name, and skipped the guard on that failure.
+
+Presentation preparation now explicitly renders validation first and then
+`sponza_view_00_circle_slow` from the same restored checkpoint, with separate
+indexes and a required checkpoint-hash/completion comparison. Local metadata
+confirms this named reserved-test clip has eight frames; no test pixels were
+read for that check. The four targeted presentation round-trip and
+representative/all/test-only integration cases pass using tiny real decoded
+frames and fake R2. No runtime source changed and no production presentation
+images were generated as part of this documentation update.
