@@ -30,9 +30,14 @@ def training_config(path):
     if (root.get("format") != defaults["format"] or type(root.get("version")) is not int or root["version"] != 1
             or root.keys()-(defaults.keys() | {"r2_streaming", "radiance_gradient_floor", "validation_batch_size", "loader_policy",
                                               "decoded_cache_frames", "prefetch_batches", "validation_every_epochs",
-                                              "validation_warmup_epochs", "finite_check_policy", "checkpoint_every_epochs"})):
+                                              "validation_warmup_epochs", "finite_check_policy", "checkpoint_every_epochs",
+                                              "max_training_seconds"})):
         raise ValueError("Invalid or unknown joint training options; use train-joint.json, not the historical plan")
     config = dict(defaults,**root)
+    if "max_training_seconds" in config:
+        seconds = config["max_training_seconds"]
+        if type(seconds) not in (int,float) or not math.isfinite(seconds) or seconds <= 0:
+            raise ValueError("max_training_seconds must be finite and positive")
     if not isinstance(config["data_root"],str) or not config["data_root"]:
         raise ValueError("Joint training needs data_root")
     config["data_root"] = str((path.parent/config["data_root"]).resolve())
@@ -215,6 +220,10 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     setup_seconds = time.perf_counter()-started
+    # Exclude metadata/download/hash setup; include initial/final validation,
+    # optimizer work and checkpoints. Stops occur only at epoch boundaries.
+    budget_started = time.perf_counter()
+    budget = config.get("max_training_seconds")
     initial_started = time.perf_counter()
     initial = evaluate_joint(model,validation,device,batch_size=config.get("validation_batch_size",1),
         loader_policy=config.get("loader_policy"),prefetch_batches=config.get("prefetch_batches",2))
@@ -229,6 +238,10 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         save_joint_checkpoint(output/name,model,optimizer=optimizer,epoch=epoch,global_step=global_step,
                               config=config,dataset_split=provenance,generator=generator)
     save("model.pt",epoch0)
+    if budget is not None:
+        save("initial.pt",epoch0)
+    trained_best_loss,trained_best_epoch = float("inf"),None
+    stop_reason = "epoch_target"
     epoch_timings = []
     for epoch in range(epoch0+1,config["epochs"]+1):
         epoch_started = time.perf_counter()
@@ -275,9 +288,19 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         if device.type == "cuda":
             torch.cuda.synchronize(device)
         train_seconds = time.perf_counter()-epoch_started
+        # Reserve a validation and checkpoint pass before attempting another
+        # complete epoch. Conservative maximum timings adapt to real data I/O.
+        final_epoch = epoch == config["epochs"]
+        if budget is not None:
+            next_train = max([train_seconds]+[r["training_seconds"] for r in epoch_timings])
+            eval_reserve = max([initial_seconds]+[r["validation_seconds"] for r in epoch_timings])
+            save_reserve = max([2.]+[r["checkpoint_seconds"] for r in epoch_timings])
+            if time.perf_counter()-budget_started + next_train + 2*eval_reserve + 2*save_reserve >= budget:
+                final_epoch = True
+                stop_reason = "time_budget_epoch_boundary"
         validation_started = time.perf_counter()
         measured = None
-        if validation_due(epoch,config):
+        if final_epoch or validation_due(epoch,config):
             measured = evaluate_joint(model,validation,device,batch_size=config.get("validation_batch_size",1),
                 loader_policy=config.get("loader_policy"),prefetch_batches=config.get("prefetch_batches",2))
             if device.type == "cuda":
@@ -291,7 +314,10 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         if best_saved:
             best_loss,best_epoch,best = measured["loss"],epoch,measured
             save("model.pt",epoch)
-        resume_saved = checkpoint_due(epoch,config)
+        if budget is not None and measured is not None and measured["loss"] < trained_best_loss:
+            trained_best_loss,trained_best_epoch = measured["loss"],epoch
+            save("best-trained.pt",epoch)
+        resume_saved = final_epoch or checkpoint_due(epoch,config)
         if resume_saved:
             save("last.pt",epoch)
         timing = {"epoch":epoch,"training_seconds":train_seconds,"training_data_seconds":data_seconds,
@@ -305,11 +331,18 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
         with (output/"history.jsonl").open("a") as stream:
             stream.write(json.dumps(record,allow_nan=False)+"\n")
         print(json.dumps(record,allow_nan=False),flush=True)
+        if final_epoch:
+            break
     summary = {"device":str(device),"parameters":sum(p.numel() for p in model.parameters()),
-        "completed_epochs":config["epochs"],"global_step":global_step,"best_epoch":best_epoch,
+        "completed_epochs":epoch,"global_step":global_step,"best_epoch":best_epoch,
         "best_validation":best,"initial_validation":initial,"checkpoint":"model.pt","resume_checkpoint":"last.pt",
         "resumed_from":str(resume) if resume else None,"selection_scope":"this_run_including_initial_model",
         "config":config,"test_pixels_loaded":False}
+    if budget is not None:
+        summary.update(stop_reason=stop_reason, training_budget_seconds=budget,
+            budget_elapsed_seconds=time.perf_counter()-budget_started,
+            budget_policy="complete_epochs_with_measured_validation_reserve_v1",
+            best_trained_epoch=trained_best_epoch, best_trained_checkpoint="best-trained.pt")
     summary["performance"] = {"setup_seconds":setup_seconds,"initial_validation_seconds":initial_seconds,
         "total_seconds":time.perf_counter()-started,"epochs":epoch_timings,
         "process_lifetime_peak_rss_bytes":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,

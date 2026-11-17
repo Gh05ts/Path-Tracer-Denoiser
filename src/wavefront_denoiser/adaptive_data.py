@@ -127,6 +127,20 @@ def read_v5_dataset(root: str | Path) -> dict:
         value = decoded_dataset_descriptor(root)
     else:
         value = read_json(root / "dataset.json")
+    # A local experiment may move whole non-test scenes without rewriting any
+    # capture locks, receipts, or source manifests. Pin the original descriptor.
+    split_path = root / "experiment-split.json"
+    if split_path.exists():
+        from .dataset_generation import digest
+        split = read_json(split_path)
+        manifest = "decoded_cache_lock.json" if value.get("storage") == "decoded" else "dataset.json"
+        if (split.get("format") != "wavefront-experiment-split" or split.get("version") != 1
+                or split.get("source_manifest_sha256") != digest(root / manifest)
+                or split.get("source_partitions") != value.get("partitions")
+                or set(split.get("partitions", {})) != {"train", "validation", "test"}
+                or split["partitions"]["test"] != value["partitions"]["test"]):
+            raise FrameFormatError("Experiment split changed source provenance or reserved test groups")
+        value = dict(value, partitions=split["partitions"], experiment_split_sha256=digest(split_path))
     if value.get("format") != "wavefront-ntasad-v5-dataset" or value.get("version") != 1:
         raise FrameFormatError("Unsupported v5 dataset")
     if set(value.get("partitions", {})) != {"train", "validation", "test"}:

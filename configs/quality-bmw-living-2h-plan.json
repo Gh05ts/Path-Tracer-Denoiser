@@ -1,0 +1,34 @@
+{
+  "format": "quality-pilot-plan",
+  "version": 1,
+  "source": "r2://denoiser/denoiser-v4",
+  "train_scenes": [
+    "bmw",
+    "living_room"
+  ],
+  "validation_scenes": [
+    "dragon",
+    "bathroom"
+  ],
+  "clip_policy": "12 per training scene covering all six camera positions; 6 per validation scene covering all camera positions and all six motion types (2 slow, 2 medium, 2 fast)",
+  "training_config": "quality-bmw-living-2h.json",
+  "reuse_arrays_from": "/home/ubuntu/workspace/h100-ready-pilot/runs/ready-pilot-data",
+  "preview_groups": [
+    "dragon_view_01_left_dolly_slow",
+    "bathroom_view_00_dolly_medium"
+  ],
+  "preview_checkpoints": [
+    "initial.pt",
+    "best-trained.pt",
+    "model.pt",
+    "last.pt"
+  ],
+  "memory_limit_fraction": 0.8,
+  "monitor_stop_fraction": 0.79,
+  "torch_allocator_fraction": 0.75,
+  "notes": [
+    "Fresh weights; Dragon has previously appeared in throughput diagnostics, so this is development validation, not an untouched test.",
+    "Reference captures have fixed SPP and are not convergence-qualified.",
+    "Two hours is a soft epoch-boundary training/validation budget; setup, download and post-training preview time are separate."
+  ]
+}

@@ -14,8 +14,8 @@ def make_report(run):
     config, performance = summary["config"], summary["performance"]
     rows = performance["epochs"]
     gib = lambda n: "unavailable" if n is None else f"{n/2**30:.3f} GiB"
-    lines = ["# H100 joint sampler/denoiser pilot", "",
-        "Diagnostic pilot using completed v4 training/validation clips; backfills and test pixels excluded.", "",
+    lines = ["# Joint sampler/denoiser pilot", "",
+        "Pilot using verified completed v4 training/validation clips; reserved test pixels excluded.", "",
         f"- Device: {performance['gpu_name'] or summary['device']}",
         f"- PyTorch: {performance['torch_version']}; CUDA: {performance['cuda_version']}; cuDNN: {performance['cudnn_version']}",
         f"- Networks: sampler {config['sampler_channels']} channels; denoiser {config['denoiser_channels']} channels",
@@ -56,7 +56,7 @@ def make_report(run):
         "- The trainer rejects nonfinite gradients/weights. Finishing this diagnostic does not establish convergence or an advantage over uniform sampling."]
     # Metadata declares the full inventory even when only a few clips have local arrays.
     capture = root/"capture_lock.json"
-    if capture.exists():
+    if capture.exists() and "max_training_seconds" not in config:
         lock = json.loads(capture.read_text())
         membership = {s["id"]:s["partition"] for s in lock["plan"]["scenes"]}
         counts = {p:sum(max(0,len(c["frames"])-config["window_length"]+1) for c in lock["configs"].values()
@@ -85,6 +85,11 @@ def make_report(run):
             f"- Estimated full epoch (schedule average at {config['epochs']} epochs): **{estimated/60:.2f} minutes**",
             *[f"- {epochs} epochs: {projected_seconds(epochs)/3600:.2f} hours" for epochs in (100,300,1000)], "",
             "This is a throughput extrapolation, not a convergence forecast or a guaranteed runtime. The small local dataset can remain warm in the OS page cache; the full dataset may have higher I/O costs. Add transfer, startup, evaluation and reporting time separately."]
+    if "max_training_seconds" in config:
+        lines += ["", "## Time budget", "",
+            f"Target: {config['max_training_seconds']/60:.2f} minutes; measured budgeted work: {summary['budget_elapsed_seconds']/60:.2f} minutes.",
+            f"Stop reason: {summary['stop_reason']}; best trained epoch: {summary['best_trained_epoch']}.",
+            "The soft timer starts after inventory setup and includes initial/final validation and checkpoint saves. Complete epochs use a conservative reserve based on measured times. A slow first epoch or later I/O change can overrun; downloads and post-training previews are separate."]
     lines += ["", "## Artifacts", "", "Keep config.json, inventory.json, history.jsonl, summary.json, model.pt and last.pt with this report. A changed dataset inventory requires a new experiment; the pilot checkpoint cannot be resumed unchanged after adding backfills.", ""]
     return "\n".join(lines)
 
