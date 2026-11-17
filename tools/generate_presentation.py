@@ -18,7 +18,7 @@ from wavefront_denoiser.model import INPUT_CHANNELS
 from wavefront_denoiser.model_artifacts import download_bundle, verify_bundle
 from wavefront_denoiser.ntasad_radiance import encode_radiance, decode_radiance
 from wavefront_denoiser.preview import display_rgb
-from wavefront_denoiser.r2_streaming import R2FrameSource
+from wavefront_denoiser.r2_streaming import R2FrameSource, prepare_r2_test_metadata
 from wavefront_denoiser.sample_layers import replay_sample_layers
 
 LABELS = {'uniform-4spp': 'Uniform 4 SPP', 'adaptive-input': 'Adaptive input (mean 4 SPP)',
@@ -166,12 +166,13 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
         for name, value in last_linear.items():
             write_rgb_exr(output/(name+'.exr'), value.numpy().transpose(1, 2, 0))
     gif(output/'comparison.gif', animations, fps)
-    report = {'group': group, 'scene': descriptor['groups'][group]['scene'], 'frames': records,
+    partition = next(p for p, names in descriptor['partitions'].items() if group in names)
+    report = {'group': group, 'scene': descriptor['groups'][group]['scene'], 'partition': partition, 'frames': records,
               'crops_xywh': boxes, 'exposure': exposure, 'display_transform': '(exposure*x/(1+exposure*x))**(1/2.2)',
               'crop_rule': 'explicit' if explicit_crops else 'center plus reference-gradient ranking',
               'reference_source_config': descriptor['groups'][group]['source_config'],
               'reference_status': descriptor.get('reference_status'), 'gif_playback_fps': fps,
-              'reference_supplied_to_prediction': False, 'test_pixels_loaded': False,
+              'reference_supplied_to_prediction': False, 'test_pixels_loaded': partition == 'test',
               'scope': 'Offline independent-layer replay; native global allocation, independent histories. Not live renderer speed.'}
     for variant in states:
         spatial = [r[variant]['spatial_encoded_l1'] for r in records[1:]]
@@ -183,11 +184,13 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
 
 
 def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=None,
-             crop_size=160, fps=6., hdr=False, all_validation=False):
+             crop_size=160, fps=6., hdr=False, all_validation=False, include_test=False, all_test=False):
     bundle, output = Path(bundle), Path(output)
     if output.exists(): raise FileExistsError('Presentation output already exists')
     if not math.isfinite(exposure) or exposure <= 0 or not 0 < fps <= 60 or crop_size < 1:
         raise ValueError('Invalid exposure, FPS or crop size')
+    if all_test and not include_test:
+        raise ValueError('--all-test requires --include-test after checkpoint selection')
     verify_bundle(bundle)
     model, payload = load_joint_checkpoint(bundle/'weights.pt', torch.device(device))
     if model.average_spp != 4 or model.allocation_policy != 'minimum_one_exact_v1':
@@ -201,31 +204,68 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
     if joint_inventory(metadata, record['selected'], verify_images=False) != expected:
         raise ValueError('Presentation metadata differs from trained inventory')
     descriptor = read_v5_dataset(metadata)
-    selected = payload['dataset_split']['selected']['validation']
-    selection_rule = 'explicit groups' if groups is not None else 'all validation' if all_validation else 'first lexicographic clip per validation scene'
+    selected = {'validation': payload['dataset_split']['selected']['validation']}
+    if include_test:
+        if record['layout'] != 'decoded':
+            raise ValueError('Held-out presentation requires a decoded training snapshot')
+        selected['test'] = descriptor['partitions']['test']
+    allowed = {g for names in selected.values() for g in names}
+    selection_rule = 'explicit groups' if groups is not None else 'first lexicographic clip per scene; all clips for requested partitions'
     if groups is None:
-        groups = []; scenes = set()
-        for group in sorted(selected):
-            scene = descriptor['groups'][group]['scene']
-            if all_validation or scene not in scenes: groups.append(group); scenes.add(scene)
-    if not groups or len(set(groups)) != len(groups) or set(groups)-set(selected):
-        raise ValueError('Choose unique validation clips from the frozen trained inventory')
+        groups = []
+        for partition, names in selected.items():
+            scenes = set()
+            for group in sorted(names):
+                scene = descriptor['groups'][group]['scene']
+                if (all_validation if partition == 'validation' else all_test) or scene not in scenes:
+                    groups.append(group); scenes.add(scene)
+    if not groups or len(set(groups)) != len(groups) or set(groups)-allowed:
+        raise ValueError('Choose unique validation clips from the frozen trained inventory; '
+                         'reserved test clips also require --include-test')
     crop_spec = json.loads(Path(crops).read_text()) if crops else {}
+    if not isinstance(crop_spec, dict) or set(crop_spec)-set(groups):
+        raise ValueError('Crop specification must map selected clips to crop boxes')
+    for group, boxes in crop_spec.items():
+        config = descriptor['groups'][group]['source_config']
+        checked_boxes(boxes, config['width'], config['height'])
+    groups_by_partition = {p: [g for g in groups if g in names] for p, names in selected.items()}
+    checkpoint_sha256 = hashlib.sha256((bundle/'weights.pt').read_bytes()).hexdigest()
     output.mkdir(parents=True)
+    # Publish the chosen checkpoint and protocol before fetching any test metadata/pixels.
+    protocol = {'checkpoint_sha256': checkpoint_sha256, 'epoch': payload['epoch'],
+                'global_step': payload['global_step'], 'groups_by_partition': groups_by_partition,
+                'selection': selection_rule, 'dataset_source': record['source'],
+                'dataset_manifest_sha256': expected['dataset_manifest_sha256'],
+                'exposure': exposure, 'crops': crop_spec, 'crop_size': crop_size, 'fps': fps, 'hdr': hdr,
+                'weights_updated': False, 'test_used_for_checkpoint_selection': False}
+    write_json(output/'evaluation-protocol.json', protocol)
+    test_groups = groups_by_partition.get('test', [])
+    test_source = None
+    if test_groups:
+        prepare_r2_test_metadata(record['source'], output/'test-metadata', groups=test_groups,
+                                 training_metadata=metadata, trained_inventory=expected)
+        test_source = R2FrameSource(output/'test-metadata', record['source'], layout='decoded',
+                                   spool_directory=output/'spool', allow_test=True)
+        test_source.preflight()
     source = R2FrameSource(metadata, record['source'], layout=record['layout'], spool_directory=output/'spool')
-    source.preflight(); results = []
+    if groups_by_partition['validation']: source.preflight()
+    results = []
     torch.set_num_threads(4)
     for group in groups:
-        results.append(infer_clip(model, source, descriptor, group, output/group, device=device, exposure=exposure,
+        frame_source = test_source if group in test_groups else source
+        results.append(infer_clip(model, frame_source, descriptor, group, output/group, device=device, exposure=exposure,
                        boxes=crop_spec.get(group), crop_size=crop_size, fps=fps, hdr=hdr))
+        print(f"Presentation clip ready: {group} ({results[-1]['partition']})", flush=True)
     report = {'groups': groups, 'selection': selection_rule,
-              'checkpoint_sha256': hashlib.sha256((bundle/'weights.pt').read_bytes()).hexdigest(),
+              'groups_by_partition': groups_by_partition, 'checkpoint_sha256': checkpoint_sha256,
               'epoch': payload['epoch'], 'model_spec': model.specification(), 'r2': source.stats,
-              'clips': results, 'complete': True, 'test_pixels_loaded': False}
+              'test_r2': test_source.stats if test_source else None,
+              'clips': results, 'complete': True, 'test_pixels_loaded': bool(test_groups), 'weights_updated': False}
     write_json(output/'presentation.json', report)
     links = ['# Presentation outputs', '', 'Native frames, matched crops, controls and GIFs use one shared exposure.', '']
     for group in groups:
-        links += [f'## {group}', '', f'![comparison]({group}/comparison-native.png)', '',
+        partition = 'test' if group in test_groups else 'validation'
+        links += [f'## {group} ({partition})', '', f'![comparison]({group}/comparison-native.png)', '',
                   f'![animation]({group}/comparison.gif)', '', f'[All controls]({group}/controls.png)', '']
     (output/'index.md').write_text('\n'.join(links))
     return report
@@ -237,6 +277,8 @@ def main():
     b.add_argument('--bundle', type=Path); b.add_argument('--model-r2')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--groups', nargs='+'); p.add_argument('--all-validation', action='store_true')
+    p.add_argument('--include-test', action='store_true', help='Include held-out scenes after freezing checkpoint selection')
+    p.add_argument('--all-test', action='store_true', help='With --include-test, render every reserved test clip')
     p.add_argument('--device', default='cuda'); p.add_argument('--exposure', type=float, default=1.)
     p.add_argument('--crops', type=Path); p.add_argument('--crop-size', type=int, default=160)
     p.add_argument('--fps', type=float, default=6.); p.add_argument('--hdr', action='store_true')
@@ -245,7 +287,8 @@ def main():
         a.bundle = a.output.parent/(a.output.name+'-model')
         download_bundle(a.model_r2, a.bundle)
     generate(a.bundle, a.output, groups=a.groups, device=a.device, exposure=a.exposure, crops=a.crops,
-             crop_size=a.crop_size, fps=a.fps, hdr=a.hdr, all_validation=a.all_validation)
+             crop_size=a.crop_size, fps=a.fps, hdr=a.hdr, all_validation=a.all_validation,
+             include_test=a.include_test, all_test=a.all_test)
 
 
 if __name__ == '__main__': main()

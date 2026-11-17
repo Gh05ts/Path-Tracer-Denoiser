@@ -62,3 +62,26 @@ score lookup, local bundle creation for all four saved states, native report
 aggregation and recovered-bundle validation. The handoff/README/presentation
 Bash blocks also pass syntax checks, and `git diff --check` passes. The native
 aggregation check uses fixture reports; it is not a new production evaluation.
+
+## Held-out presentation verification, 2026-11-17
+
+The presentation generator now supports explicit `--include-test` inference
+alongside validation, plus `--all-test` and test-only clip selection. Original
+training selections and bundle metadata remain unchanged. Separate test metadata
+must match the training locks and recorded reserved manifests, pass scene/content
+separation checks, and bind complete decoded arrays to current scene receipts.
+The selected checkpoint and protocol are saved before remote test metadata or
+pixels are read. Output metrics and the presentation index label each split.
+
+The handoff/R2-streaming/sampler-stability/joint-checkpoint/checkpoint-cadence
+regression selection passed **66 tests** on CPU. After expanding representative,
+all-clip and test-only coverage and adding a changed-reserved-manifest case, all
+**22 handoff tests** passed. These focused runs use real tiny decoded frames and
+a fake R2 transport. They verify inference with gradients disabled, reference-free
+prediction, unchanged model/bundle checksums, equal adaptive/uniform integer
+budgets, image/GIF outputs, empty spools, no training-pixel requests, explicit
+test access, and rejection of incomplete/corrupt provenance before pixel reads.
+The updated handoff's 11 Bash blocks and presentation guide's three Bash blocks
+pass syntax checks; local Markdown links resolve and `git diff --check` passes.
+No production Sponza inference or live R2 test download was performed for this
+change; data availability and GPU throughput remain runtime checks.
