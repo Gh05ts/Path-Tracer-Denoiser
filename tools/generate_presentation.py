@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Restore R2 weights and infer native images, aligned crops and temporal GIFs."""
 import argparse
+import csv
 import hashlib
 import json
 import math
@@ -20,7 +21,9 @@ from wavefront_denoiser.joint_checkpoint import load_joint_checkpoint
 from wavefront_denoiser.model import INPUT_CHANNELS
 from wavefront_denoiser.model_artifacts import download_bundle, verify_bundle
 from wavefront_denoiser.ntasad_radiance import encode_radiance, decode_radiance
-from wavefront_denoiser.preview import display_rgb
+from wavefront_denoiser.preview import display_rgb, tonemap_rgb
+from wavefront_denoiser.preview_metrics import (METHODS, QUALITY_KEYS, aggregate_quality,
+                                               format_db, frame_quality, metric_protocol)
 from wavefront_denoiser.r2_streaming import R2FrameSource, prepare_r2_test_metadata
 from wavefront_denoiser.sample_layers import replay_sample_layers
 
@@ -34,6 +37,12 @@ DITHER = getattr(Image, 'Dither', Image)
 
 def write_json(path, value):
     Path(path).write_text(json.dumps(value, indent=2, allow_nan=False)+'\n')
+
+
+def write_csv(path, fields, rows):
+    with Path(path).open('w', newline='') as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader(); writer.writerows(rows)
 
 
 def crop_boxes(reference, size):
@@ -111,6 +120,7 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
     started = time.perf_counter()
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
     states = {'adaptive': None, 'uniform': None}; previous = {'adaptive': None, 'uniform': None}
+    previous_quality = {}
     animations = []; records = []; last_images = None; last_linear = None
     count_frames = descriptor['groups'][group]['frame_count']
     for index in range(count_frames):
@@ -147,9 +157,15 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
             metrics['unavailable_fraction'] = float((~states[variant].valid).float().mean())
             row[variant] = metrics
             linear[variant+'-denoised'] = decode_radiance(encoded)
+        toned = {name: tonemap_rgb(value.numpy().transpose(1, 2, 0), exposure) for name, value in linear.items()}
+        last_previous_quality, previous_quality = previous_quality, {}
+        row['quality'] = {}
+        for method in METHODS:
+            row['quality'][method], previous_quality[method] = frame_quality(
+                toned[method], toned['reference'], last_previous_quality.get(method))
         if torch.device(device).type == 'cuda': torch.cuda.synchronize(device)
         inferred_at = time.perf_counter()
-        images = {k: Image.fromarray(display_rgb(v.numpy().transpose(1, 2, 0), exposure)) for k, v in linear.items()}
+        images = {k: Image.fromarray(np.uint8(np.clip(v*255, 0, 255))) for k, v in toned.items()}
         folder = output/f'frame_{index:06d}'; folder.mkdir()
         for name, image in images.items(): image.save(folder/(name+'.png'))
         count_map = counts[0, 0].cpu().numpy().astype(np.uint8)
@@ -186,6 +202,16 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
             crop = image.crop((x, y, x+cw, y+ch))
             crop.save(folder/(name+'.png'))
             crop.resize((cw*3, ch*3), RESAMPLE.NEAREST).save(folder/(name+'-3x.png'))
+        quality = {}
+        for method in METHODS:
+            history = last_previous_quality.get(method)
+            quality[method], _ = frame_quality(toned[method][y:y+ch, x:x+cw],
+                toned['reference'][y:y+ch, x:x+cw],
+                history[y:y+ch, x:x+cw] if history is not None else None)
+        write_json(folder/'metrics.json', {'frame': count_frames-1, 'crops_xywh': [x, y, cw, ch],
+            'previous_frame': count_frames-2 if count_frames > 1 else None,
+            'scope': 'Final-frame crop and final adjacent temporal pair at these fixed coordinates',
+            'metric_protocol': metric_protocol(exposure), 'quality': quality})
     if hdr:
         for name, value in last_linear.items():
             write_rgb_exr(output/(name+'.exr'), value.numpy().transpose(1, 2, 0))
@@ -197,6 +223,8 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
               'reference_source_config': descriptor['groups'][group]['source_config'],
               'reference_status': descriptor.get('reference_status'), 'gif_playback_fps': fps,
               'reference_supplied_to_prediction': False, 'test_pixels_loaded': partition == 'test',
+              'metric_protocol': metric_protocol(exposure),
+              'quality': {method: aggregate_quality([r['quality'][method] for r in records]) for method in METHODS},
               'elapsed_seconds': time.perf_counter()-started,
               'allocation_display': {'quantity': 'actual integer samples per pixel', 'minimum': 0,
                   'maximum': model.max_spp, 'grayscale': 'linear', 'blue': 'log2(1+spp)/log2(1+maximum)',
@@ -208,6 +236,12 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
         report[variant] = {'spatial_encoded_l1': sum(spatial)/len(spatial) if spatial else None,
                            'temporal_encoded_l1': sum(temporal)/len(temporal) if temporal else None}
     write_json(output/'metrics.json', report)
+    write_csv(output/'quality-frames.csv', ('frame', 'method', 'initialization_only',
+              'included_in_spatial_summary', 'included_in_temporal_summary', *QUALITY_KEYS),
+              [dict(frame=row['frame'], method=method, initialization_only=row['initialization_only'],
+                    included_in_spatial_summary=row['frame'] >= 1,
+                    included_in_temporal_summary=row['frame'] >= 2, **row['quality'][method])
+               for row in records for method in METHODS])
     return report
 
 
@@ -282,6 +316,7 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
                 'exposure': exposure, 'crops': crop_spec, 'crop_size': crop_size, 'fps': fps, 'hdr': hdr,
                 'weights_updated': False, 'test_used_for_checkpoint_selection': False}
     protocol.update(purpose='visual_preview' if preview else 'presentation', scenes=scenes)
+    protocol['metric_protocol'] = metric_protocol(exposure)
     write_json(output/'evaluation-protocol.json', protocol)
     test_groups = groups_by_partition.get('test', [])
     test_source = None
@@ -309,14 +344,32 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
     report.update(purpose=protocol['purpose'], scenes=scenes, elapsed_seconds=time.perf_counter()-started,
                   peak_gpu_allocated_bytes=(torch.cuda.max_memory_allocated(device)
                                             if torch.device(device).type == 'cuda' else None))
+    report['metric_protocol'] = metric_protocol(exposure)
     if preview: report['coverage'] = 'Selected clips for visual comparison; not full validation or evaluation'
     write_json(output/'presentation.json', report)
+    write_csv(output/'quality-summary.csv', ('group', 'scene', 'partition', 'method', 'exposure',
+              'metric_version', 'epoch', 'checkpoint_sha256', 'spatial_frames', 'temporal_pairs', *QUALITY_KEYS),
+              [dict(group=clip['group'], scene=clip['scene'], partition=clip['partition'], method=method,
+                    exposure=exposure, metric_version=report['metric_protocol']['version'],
+                    epoch=payload['epoch'], checkpoint_sha256=checkpoint_sha256, **clip['quality'][method])
+               for clip in results for method in METHODS])
     links = ['# '+('Inference previews' if preview else 'Presentation outputs'), '',
              'Native frames, matched crops, controls and GIFs use one shared exposure.', '']
     if preview: links += [report['coverage']+'.', '']
+    links += ['[Metric definitions and aggregation](metric-protocol.json) | [Clip scores (CSV)](quality-summary.csv)', '',
+              'PSNR and tPSNR use unquantized tone-mapped RGB; higher is better. Initialization is excluded from clip summaries.', '']
+    write_json(output/'metric-protocol.json', report['metric_protocol'])
     for group in groups:
         partition = 'test' if group in test_groups else 'validation'
-        links += [f'## {group} ({partition})', '', f'![comparison]({group}/comparison-native.png)', '',
+        clip = next(result for result in results if result['group'] == group)
+        links += [f'## {group} ({partition})', '', '| Method | PSNR (dB) | tPSNR (dB) |',
+                  '| --- | ---: | ---: |']
+        for method in METHODS:
+            values = clip['quality'][method]
+            links.append(f'| {LABELS[method]} | {format_db(values["psnr_db"], values["exact_match"])} | '
+                         f'{format_db(values["tpsnr_db"], values["temporal_exact_match"])} |')
+        links += ['', f'[Per-frame scores (CSV)]({group}/quality-frames.csv)', '',
+                  f'![comparison]({group}/comparison-native.png)', '',
                   f'![animation]({group}/comparison.gif)', '', f'[All controls]({group}/controls.png)', '',
                   f'![Actual sample allocation]({group}/allocation-heatmap.png)', '',
                   f'![Sample allocation scale]({group}/allocation-legend.png)', '']

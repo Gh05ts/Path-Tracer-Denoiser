@@ -1,5 +1,6 @@
 """Checkpoint snapshots, scene isolation and exported allocation evidence."""
 import hashlib
+import csv
 import json
 from pathlib import Path
 import shutil
@@ -7,6 +8,7 @@ import shutil
 import numpy as np
 from PIL import Image
 import pytest
+import torch
 
 from test_adaptive_dataset import source_dataset
 from test_joint_training import joint_dataset
@@ -51,6 +53,32 @@ def test_export_best_does_not_need_finished_summary(model_bundle, tmp_path):
     assert not manifest['selection']['initialization_selected']
     assert not (run/'train/summary.json').exists()
     verify_bundle(tmp_path/'best-export')
+
+
+def test_reexport_picks_up_later_best_and_preserves_earlier_bundle(model_bundle, tmp_path):
+    _, _, metadata, checkpoint = model_bundle
+    run = tmp_path/'ongoing'
+    (run/'train').mkdir(parents=True)
+    shutil.copytree(metadata, run/'data')
+    shutil.copyfile(checkpoint, run/'train/model.pt')
+    (run/'train/history.jsonl').write_text('{"epoch": 3, "validation": {"loss": 0.25}}\n')
+    first = build_best_bundle(run, tmp_path/'early-export')
+    original_bytes = (tmp_path/'early-export/weights.pt').read_bytes()
+    model, payload = load_joint_checkpoint(checkpoint)
+    with torch.no_grad():
+        next(model.denoiser.parameters()).add_(.001)
+    save_joint_checkpoint(run/'train/model.pt', model, config=payload['config'],
+                          dataset_split=payload['dataset_split'], epoch=4, global_step=16)
+    with (run/'train/history.jsonl').open('a') as stream:
+        stream.write('{"epoch": 4, "validation": {"loss": 0.20}}\n')
+    later = build_best_bundle(run, tmp_path/'later-export')
+    assert first['epoch'] == 3 and later['epoch'] == 4
+    assert later['selection']['validation']['loss'] == .2
+    early_model, _ = load_joint_checkpoint(tmp_path/'early-export/weights.pt')
+    later_model, _ = load_joint_checkpoint(tmp_path/'later-export/weights.pt')
+    assert not torch.equal(next(early_model.denoiser.parameters()), next(later_model.denoiser.parameters()))
+    assert (tmp_path/'early-export/weights.pt').read_bytes() == original_bytes
+    verify_bundle(tmp_path/'early-export'); verify_bundle(tmp_path/'later-export')
 
 
 def scene_descriptor():
@@ -119,6 +147,22 @@ def test_preview_keeps_downloads_outside_retained_images(heldout_bundle, tmp_pat
                                           expected['allocation-heatmap'].crop((x, y, x+w, y+h)))
         assert clip['elapsed_seconds'] > 0
         assert all(row['timing']['total_seconds'] > 0 for row in clip['frames'])
+        assert clip['quality']['adaptive-denoised']['spatial_frames'] == len(clip['frames'])-1
+        assert clip['quality']['adaptive-denoised']['temporal_pairs'] == len(clip['frames'])-2
+        for i, box in enumerate(clip['crops_xywh'], 1):
+            metrics = json.loads((folder/f'crop_{i:02d}/metrics.json').read_text())
+            assert metrics['crops_xywh'] == box and metrics['frame'] == len(clip['frames'])-1
+            assert metrics['quality']['adaptive-denoised']['psnr_db'] is not None
+        frames = list(csv.DictReader((folder/'quality-frames.csv').open()))
+        assert len(frames) == len(clip['frames'])*4
+        assert frames[0]['included_in_spatial_summary'] == 'False'
+        assert frames[0]['tpsnr_db'] == ''
+    summary = list(csv.DictReader((output/'quality-summary.csv').open()))
+    assert len(summary) == len(groups)*4
+    assert {row['partition'] for row in summary} == {'validation', 'test'}
+    assert all(row['checkpoint_sha256'] == report['checkpoint_sha256'] for row in summary)
+    assert 'PSNR (dB)' in (output/'index.md').read_text()
+    assert (output/'metric-protocol.json').is_file()
     shutil.rmtree(downloads)
     assert (output/'presentation.json').is_file()
     assert all((output/g/'allocation-heatmap.png').is_file() for g in groups)
@@ -132,6 +176,21 @@ def test_preview_cli_checks_paths_before_download(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match='separate'):
         module.preview(model_r2='r2://bucket/model-runs/snapshot', scenes=['bathroom'], device='cpu',
                        download_dir=tmp_path/'downloads', output=tmp_path/'downloads/previews')
+
+
+def test_full_image_crop_matches_last_frame_quality_and_temporal_pair(model_bundle, tmp_path):
+    bundle, _, metadata, _ = model_bundle
+    descriptor = read_v5_dataset(metadata)
+    group = descriptor['partitions']['validation'][0]
+    config = descriptor['groups'][group]['source_config']
+    crops = tmp_path/'crops.json'
+    crops.write_text(json.dumps({group: [[0, 0, config['width'], config['height']]]}))
+    output = tmp_path/'quality-preview'
+    report = tool('generate_presentation').generate(bundle, output, groups=[group], crops=crops, preview=True)
+    clip = report['clips'][0]
+    crop = json.loads((output/group/'crop_01/metrics.json').read_text())
+    assert crop['quality'] == clip['frames'][-1]['quality']
+    assert crop['previous_frame'] == len(clip['frames'])-2
 
 
 def test_preview_cli_downloads_and_runs_selected_clip(model_bundle, tmp_path, monkeypatch, capsys):
