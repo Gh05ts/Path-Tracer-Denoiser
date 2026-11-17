@@ -35,7 +35,7 @@ def test_joint_preview_exports_aligned_recurrent_validation_crop(preview_data,tm
     _, config = config_for(preview_data)
     run = tmp_path/"run"
     run.mkdir()
-    model = JointNTASAD(4,4)
+    model = JointNTASAD(4,4,allocation_policy=config["allocation_policy"])
     inventory = joint_inventory(preview_data)
     save_joint_checkpoint(run/"last.pt",model,config=config,dataset_split=inventory,epoch=2,global_step=8)
     original = JointNTASAD.forward_sequence

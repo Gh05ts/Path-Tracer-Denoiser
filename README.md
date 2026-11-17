@@ -1,3 +1,6 @@
+> **Final run on a new machine:** start with [FINAL_RUN_HANDOFF.md](FINAL_RUN_HANDOFF.md).
+> [Post-run crops, native images and GIFs](docs/post-run-presentation.md) use R2 data and exported model weights.
+
 # Wavefront denoiser
 
 One **NTASAD spatial/temporal kernel-prediction U-Net** denoises captures from

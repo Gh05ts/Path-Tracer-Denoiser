@@ -1,0 +1,1534 @@
+{
+  "run": "final-quality-screen-20261117",
+  "source_run_directory": "/home/ubuntu/quality_workspace/runs/final-quality-screen-20261117",
+  "decision": {
+    "suite_complete": true,
+    "selected_arm": null,
+    "selected_checkpoint": null,
+    "matched_window_augmentation_prefix": true,
+    "matched_128_crop_prefix": true,
+    "shared_recorded_steps": 192,
+    "relaxation_produced_training_zeros": false,
+    "reasons_by_arm": {
+      "fixed-128": [
+        "native allocation improvement below 0.1%",
+        "dragon_view_01_left_dolly_slow: loss regresses >0.1% against uniform",
+        "dragon_view_01_left_dolly_slow: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: loss regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.5% against warm checkpoint"
+      ],
+      "fixed-256": [
+        "native allocation improvement below 0.1%",
+        "dragon_view_01_left_dolly_slow: loss regresses >0.1% against uniform",
+        "dragon_view_01_left_dolly_slow: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: loss regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_pan_tilt_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: spatial_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_circle_fast: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_orbit_slow: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_orbit_slow: temporal_l1 regresses >0.5% against warm checkpoint"
+      ],
+      "joint-128": [
+        "native allocation improvement below 0.1%",
+        "dragon_view_04_left_circle_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: loss regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_dolly_medium: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_pan_tilt_fast: loss regresses >0.1% against uniform",
+        "bathroom_view_00_pan_tilt_fast: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_linear_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_circle_fast: loss regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_orbit_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "crop allocation improvement below 0.1%"
+      ],
+      "staged-128": [
+        "native allocation improvement below 0.1%",
+        "dragon_view_04_left_circle_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_pan_tilt_fast: loss regresses >0.1% against uniform",
+        "bathroom_view_00_pan_tilt_fast: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_linear_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_circle_fast: loss regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "crop allocation improvement below 0.1%"
+      ],
+      "zero-curriculum-128": [
+        "native allocation improvement below 0.1%",
+        "dragon_view_01_left_dolly_slow: loss regresses >0.1% against uniform",
+        "dragon_view_01_left_dolly_slow: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_01_left_dolly_slow: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_02_right_orbit_medium: loss regresses >0.1% against uniform",
+        "dragon_view_02_right_orbit_medium: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_02_right_orbit_medium: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: loss regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_03_left_pan_tilt_slow: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "dragon_view_04_right_wave_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_05_forward_linear_medium: loss regresses >0.1% against uniform",
+        "dragon_view_05_forward_linear_medium: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_05_forward_linear_medium: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_05_forward_linear_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_dolly_medium: loss regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_dolly_medium: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: spatial_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_pan_tilt_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_pan_tilt_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: loss regresses >0.1% against uniform",
+        "bathroom_view_01_linear_medium: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_linear_medium: spatial_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: loss regresses >0.1% against uniform",
+        "bathroom_view_01_wave_slow: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_wave_slow: spatial_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_wave_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_circle_fast: loss regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_orbit_slow: loss regresses >0.1% against uniform",
+        "bathroom_view_02_orbit_slow: loss regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_orbit_slow: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_orbit_slow: spatial_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_orbit_slow: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_orbit_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "crop allocation improvement below 0.1%"
+      ],
+      "zero-relaxation-128": [
+        "native allocation improvement below 0.1%",
+        "dragon_view_04_left_circle_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_left_circle_fast: temporal_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: loss regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: spatial_l1 regresses >0.1% against uniform",
+        "dragon_view_04_right_wave_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: loss regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_dolly_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_00_pan_tilt_fast: loss regresses >0.1% against uniform",
+        "bathroom_view_00_pan_tilt_fast: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_00_pan_tilt_fast: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_linear_medium: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_01_wave_slow: loss regresses >0.1% against uniform",
+        "bathroom_view_01_wave_slow: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_01_wave_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_circle_fast: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_circle_fast: temporal_l1 regresses >0.5% against warm checkpoint",
+        "bathroom_view_02_orbit_slow: loss regresses >0.1% against uniform",
+        "bathroom_view_02_orbit_slow: spatial_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_orbit_slow: temporal_l1 regresses >0.1% against uniform",
+        "bathroom_view_02_orbit_slow: temporal_l1 regresses >0.5% against warm checkpoint",
+        "zero-sample behavior was not exercised in training"
+      ]
+    },
+    "paper_quality_established": false,
+    "full_data_run_prepared": false,
+    "test_pixels_loaded": false,
+    "scope": "Single-seed pilot development screen; no automatic final launch."
+  },
+  "backward_probe": {
+    "count_0_linear": 3.0,
+    "count_0_encoded": 0.0,
+    "count_1_linear": 3.0,
+    "count_1_encoded": 0.0,
+    "count_4_linear": 0.75,
+    "count_4_encoded": 0.0,
+    "interpretation": "Finite DASR denominator does not remove exact-black or availability-mask gradient blocking. Forced zero quota does not differentiate hole selection."
+  },
+  "warm_native_mean_loss": 0.052940853588682196,
+  "arms": {
+    "fixed-128": {
+      "best": {
+        "epoch": 4,
+        "zero_fraction": 0.0
+      },
+      "completed_epochs": 4,
+      "global_step": 192,
+      "stop_reason": "epoch_target",
+      "native_learned_loss": 0.05192322113055972,
+      "native_uniform_loss": 0.051903734578647547,
+      "native_delta_percent": 0.03754364126273835,
+      "native_vs_warm_percent": -1.9222063664270594,
+      "crop_delta_percent": -0.5195141721654584,
+      "maximum_observed_zero_fraction": 0.0,
+      "peak_sampler_gradient": 0.0,
+      "peak_denoiser_gradient": 0.2787831425666809,
+      "native_clip_metrics": {
+        "dragon_view_01_left_dolly_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.023906368828777756,
+            "spatial_l1": 0.012126370865319456,
+            "temporal_l1": 0.0117799979634583,
+            "unexpected_black_fraction": 4.822530789689543e-06
+          },
+          "uniform": {
+            "loss": 0.023875210855510972,
+            "spatial_l1": 0.01210325796689306,
+            "temporal_l1": 0.011771952888617912,
+            "unexpected_black_fraction": 4.822530789689543e-06
+          }
+        },
+        "dragon_view_02_right_orbit_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.0264070008748344,
+            "spatial_l1": 0.013024673131959779,
+            "temporal_l1": 0.013382327742874622,
+            "unexpected_black_fraction": 6.40707695051138e-06
+          },
+          "uniform": {
+            "loss": 0.02640205260277504,
+            "spatial_l1": 0.013024419812219483,
+            "temporal_l1": 0.013377632790555557,
+            "unexpected_black_fraction": 6.40707695051138e-06
+          }
+        },
+        "dragon_view_03_left_pan_tilt_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026366892359441237,
+            "spatial_l1": 0.011878059644784247,
+            "temporal_l1": 0.014488832714656988,
+            "unexpected_black_fraction": 5.373677205560463e-06
+          },
+          "uniform": {
+            "loss": 0.026304509224636216,
+            "spatial_l1": 0.01184180538569178,
+            "temporal_l1": 0.014462703838944435,
+            "unexpected_black_fraction": 5.373677205560463e-06
+          }
+        },
+        "dragon_view_04_left_circle_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03215220481866882,
+            "spatial_l1": 0.01391722700957741,
+            "temporal_l1": 0.018234977809091408,
+            "unexpected_black_fraction": 2.8246252311094267e-06
+          },
+          "uniform": {
+            "loss": 0.03216432846550431,
+            "spatial_l1": 0.013926992858094829,
+            "temporal_l1": 0.018237335607409477,
+            "unexpected_black_fraction": 2.8246252311094267e-06
+          }
+        },
+        "dragon_view_04_right_wave_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03662115792256026,
+            "spatial_l1": 0.015578097264681543,
+            "temporal_l1": 0.021043060657878716,
+            "unexpected_black_fraction": 3.1690917369685067e-06
+          },
+          "uniform": {
+            "loss": 0.036141076479994115,
+            "spatial_l1": 0.015291035840553897,
+            "temporal_l1": 0.02085004063944022,
+            "unexpected_black_fraction": 1.2676366947874027e-05
+          }
+        },
+        "dragon_view_05_forward_linear_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.029428272153295222,
+            "spatial_l1": 0.012912818496780736,
+            "temporal_l1": 0.016515453656514485,
+            "unexpected_black_fraction": 1.5432098864818856e-05
+          },
+          "uniform": {
+            "loss": 0.029497282623889898,
+            "spatial_l1": 0.012967958780271667,
+            "temporal_l1": 0.016529323843618233,
+            "unexpected_black_fraction": 1.5776564997135472e-05
+          }
+        },
+        "bathroom_view_00_dolly_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07002401156794458,
+            "spatial_l1": 0.031936035092387884,
+            "temporal_l1": 0.038087976475556694,
+            "unexpected_black_fraction": 0.000277502200008582
+          },
+          "uniform": {
+            "loss": 0.07002770040361654,
+            "spatial_l1": 0.031940264095153124,
+            "temporal_l1": 0.03808743630846342,
+            "unexpected_black_fraction": 0.0002780533434361132
+          }
+        },
+        "bathroom_view_00_pan_tilt_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07041224198681967,
+            "spatial_l1": 0.03425488541168826,
+            "temporal_l1": 0.036157356575131416,
+            "unexpected_black_fraction": 0.00012166556436048788
+          },
+          "uniform": {
+            "loss": 0.07054914090605009,
+            "spatial_l1": 0.03429121763578483,
+            "temporal_l1": 0.03625792327026526,
+            "unexpected_black_fraction": 0.00015556106947250164
+          }
+        },
+        "bathroom_view_01_linear_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07647856591003283,
+            "spatial_l1": 0.03421634515481336,
+            "temporal_l1": 0.04226222075521946,
+            "unexpected_black_fraction": 0.0008149388236883429
+          },
+          "uniform": {
+            "loss": 0.07647380880301907,
+            "spatial_l1": 0.03422309671129499,
+            "temporal_l1": 0.042250712091724076,
+            "unexpected_black_fraction": 0.0008152832638838195
+          }
+        },
+        "bathroom_view_01_wave_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07350374421193487,
+            "spatial_l1": 0.033353490488869805,
+            "temporal_l1": 0.040150253723065056,
+            "unexpected_black_fraction": 0.0003266920205403169
+          },
+          "uniform": {
+            "loss": 0.07351256073230789,
+            "spatial_l1": 0.03335865932915892,
+            "temporal_l1": 0.04015390140314897,
+            "unexpected_black_fraction": 0.0003257275027083649
+          }
+        },
+        "bathroom_view_02_circle_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.09081434298838888,
+            "spatial_l1": 0.04154973317469869,
+            "temporal_l1": 0.049264609813690186,
+            "unexpected_black_fraction": 0.0003273809556308801
+          },
+          "uniform": {
+            "loss": 0.09093329390244825,
+            "spatial_l1": 0.04162933198469026,
+            "temporal_l1": 0.04930396191775799,
+            "unexpected_black_fraction": 0.0003513558175265124
+          }
+        },
+        "bathroom_view_02_orbit_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.06696384994401819,
+            "spatial_l1": 0.0348297336271831,
+            "temporal_l1": 0.03213411631683508,
+            "unexpected_black_fraction": 0.00035755621040932183
+          },
+          "uniform": {
+            "loss": 0.06696384994401819,
+            "spatial_l1": 0.0348297336271831,
+            "temporal_l1": 0.03213411631683508,
+            "unexpected_black_fraction": 0.00035755621040932183
+          }
+        }
+      },
+      "checkpoint_sha256": "1d265b48dea41348053c5408823522989985b4fbd82d9e56444230b994129186"
+    },
+    "fixed-256": {
+      "best": {
+        "epoch": 3,
+        "zero_fraction": 0.0
+      },
+      "completed_epochs": 4,
+      "global_step": 192,
+      "stop_reason": "epoch_target",
+      "native_learned_loss": 0.05278890507317902,
+      "native_uniform_loss": 0.052766821955123715,
+      "native_delta_percent": 0.04185038483857095,
+      "native_vs_warm_percent": -0.28701561309101287,
+      "crop_delta_percent": -0.5330152787251685,
+      "maximum_observed_zero_fraction": 0.0,
+      "peak_sampler_gradient": 0.0,
+      "peak_denoiser_gradient": 0.23284505307674408,
+      "native_clip_metrics": {
+        "dragon_view_01_left_dolly_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.024200390314772016,
+            "spatial_l1": 0.012306076075349535,
+            "temporal_l1": 0.01189431423942248,
+            "unexpected_black_fraction": 4.202491157099887e-06
+          },
+          "uniform": {
+            "loss": 0.02416274140012406,
+            "spatial_l1": 0.012277812563947268,
+            "temporal_l1": 0.011884928836176792,
+            "unexpected_black_fraction": 4.202491157099887e-06
+          }
+        },
+        "dragon_view_02_right_orbit_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026657254856434606,
+            "spatial_l1": 0.013171827686684472,
+            "temporal_l1": 0.013485427169750134,
+            "unexpected_black_fraction": 5.649250689592529e-06
+          },
+          "uniform": {
+            "loss": 0.02664699631610087,
+            "spatial_l1": 0.013168451775397574,
+            "temporal_l1": 0.013478544540703297,
+            "unexpected_black_fraction": 5.649250689592529e-06
+          }
+        },
+        "dragon_view_03_left_pan_tilt_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026647922982062613,
+            "spatial_l1": 0.012059093852128302,
+            "temporal_l1": 0.014588829129934311,
+            "unexpected_black_fraction": 5.098103948902073e-06
+          },
+          "uniform": {
+            "loss": 0.02656567482543843,
+            "spatial_l1": 0.012007271072694234,
+            "temporal_l1": 0.014558403752744198,
+            "unexpected_black_fraction": 5.098103948902073e-06
+          }
+        },
+        "dragon_view_04_left_circle_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03218869736329431,
+            "spatial_l1": 0.013919494380908353,
+            "temporal_l1": 0.018269202982385952,
+            "unexpected_black_fraction": 2.9624118594386218e-06
+          },
+          "uniform": {
+            "loss": 0.03219608958100989,
+            "spatial_l1": 0.013926967313247067,
+            "temporal_l1": 0.01826912226776282,
+            "unexpected_black_fraction": 2.9624118594386218e-06
+          }
+        },
+        "dragon_view_04_right_wave_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03599028577584596,
+            "spatial_l1": 0.015267784175063883,
+            "temporal_l1": 0.020722501600782078,
+            "unexpected_black_fraction": 3.306878349056725e-06
+          },
+          "uniform": {
+            "loss": 0.035440897436014245,
+            "spatial_l1": 0.014952048526278563,
+            "temporal_l1": 0.02048884890973568,
+            "unexpected_black_fraction": 1.1298501119329427e-05
+          }
+        },
+        "dragon_view_05_forward_linear_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.02969372019703899,
+            "spatial_l1": 0.013016680521624429,
+            "temporal_l1": 0.016677039675414562,
+            "unexpected_black_fraction": 1.4123126382920808e-05
+          },
+          "uniform": {
+            "loss": 0.029758013607490634,
+            "spatial_l1": 0.013066511734255723,
+            "temporal_l1": 0.01669150187323491,
+            "unexpected_black_fraction": 1.4398699493410407e-05
+          }
+        },
+        "bathroom_view_00_dolly_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07152945823257878,
+            "spatial_l1": 0.03255557481731687,
+            "temporal_l1": 0.0389738834152619,
+            "unexpected_black_fraction": 0.000301752651044548
+          },
+          "uniform": {
+            "loss": 0.07153333191360746,
+            "spatial_l1": 0.032560700816767554,
+            "temporal_l1": 0.038972631096839905,
+            "unexpected_black_fraction": 0.0003012704009311814
+          }
+        },
+        "bathroom_view_00_pan_tilt_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07059413159177416,
+            "spatial_l1": 0.03316590216542993,
+            "temporal_l1": 0.03742822942634424,
+            "unexpected_black_fraction": 0.00011959876506547776
+          },
+          "uniform": {
+            "loss": 0.07079345874843143,
+            "spatial_l1": 0.03326170412557466,
+            "temporal_l1": 0.037531754622856774,
+            "unexpected_black_fraction": 0.0001540454174703752
+          }
+        },
+        "bathroom_view_01_linear_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07880021339016302,
+            "spatial_l1": 0.03516347786145551,
+            "temporal_l1": 0.043636735528707504,
+            "unexpected_black_fraction": 0.0008504877835418613
+          },
+          "uniform": {
+            "loss": 0.0787929573229381,
+            "spatial_l1": 0.03517065170620169,
+            "temporal_l1": 0.04362230561673641,
+            "unexpected_black_fraction": 0.0008495232297199047
+          }
+        },
+        "bathroom_view_01_wave_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.0751857761116255,
+            "spatial_l1": 0.03406713131283011,
+            "temporal_l1": 0.04111864479879538,
+            "unexpected_black_fraction": 0.00034722222101533717
+          },
+          "uniform": {
+            "loss": 0.07519861470375742,
+            "spatial_l1": 0.034074095743043084,
+            "temporal_l1": 0.04112451896071434,
+            "unexpected_black_fraction": 0.00034605102492995296
+          }
+        },
+        "bathroom_view_02_circle_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.09352136598456473,
+            "spatial_l1": 0.042426708553518565,
+            "temporal_l1": 0.051094657431046166,
+            "unexpected_black_fraction": 0.000345844349275077
+          },
+          "uniform": {
+            "loss": 0.0936554435285784,
+            "spatial_l1": 0.04252275771328381,
+            "temporal_l1": 0.051132685815294586,
+            "unexpected_black_fraction": 0.0003727816240695704
+          }
+        },
+        "bathroom_view_02_orbit_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.06845764407799357,
+            "spatial_l1": 0.03572519522692476,
+            "temporal_l1": 0.03273244885106882,
+            "unexpected_black_fraction": 0.0003902805312593825
+          },
+          "uniform": {
+            "loss": 0.06845764407799357,
+            "spatial_l1": 0.03572519522692476,
+            "temporal_l1": 0.03273244885106882,
+            "unexpected_black_fraction": 0.0003902805312593825
+          }
+        }
+      },
+      "checkpoint_sha256": "62cc1be9ef0b889affa1a252c79e5a79f749ea4a513224f8543182fd21c61e87"
+    },
+    "joint-128": {
+      "best": {
+        "epoch": 4,
+        "zero_fraction": 0.0
+      },
+      "completed_epochs": 4,
+      "global_step": 192,
+      "stop_reason": "epoch_target",
+      "native_learned_loss": 0.051943422217542924,
+      "native_uniform_loss": 0.05188066726883075,
+      "native_delta_percent": 0.12096018038278977,
+      "native_vs_warm_percent": -1.8840485249608907,
+      "crop_delta_percent": -0.09326461511117712,
+      "maximum_observed_zero_fraction": 0.0,
+      "peak_sampler_gradient": 0.326730340719223,
+      "peak_denoiser_gradient": 0.2737393081188202,
+      "native_clip_metrics": {
+        "dragon_view_01_left_dolly_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.023853388304511704,
+            "spatial_l1": 0.01208280399441719,
+            "temporal_l1": 0.011770584310094515,
+            "unexpected_black_fraction": 5.029210829629197e-06
+          },
+          "uniform": {
+            "loss": 0.023857497033618745,
+            "spatial_l1": 0.012085577206952232,
+            "temporal_l1": 0.011771919826666514,
+            "unexpected_black_fraction": 5.029210829629197e-06
+          }
+        },
+        "dragon_view_02_right_orbit_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026365103310949746,
+            "spatial_l1": 0.012985924524920327,
+            "temporal_l1": 0.013379178786029419,
+            "unexpected_black_fraction": 6.407076658173797e-06
+          },
+          "uniform": {
+            "loss": 0.02637770463756862,
+            "spatial_l1": 0.012999319338372775,
+            "temporal_l1": 0.013378385299195847,
+            "unexpected_black_fraction": 6.407076658173797e-06
+          }
+        },
+        "dragon_view_03_left_pan_tilt_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.02623479434155992,
+            "spatial_l1": 0.011809722919549261,
+            "temporal_l1": 0.01442507142201066,
+            "unexpected_black_fraction": 5.442570649652875e-06
+          },
+          "uniform": {
+            "loss": 0.026252370771198047,
+            "spatial_l1": 0.011822136252054147,
+            "temporal_l1": 0.0144302345191439,
+            "unexpected_black_fraction": 5.442570649652875e-06
+          }
+        },
+        "dragon_view_04_left_circle_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03227840479285944,
+            "spatial_l1": 0.014039296257708753,
+            "temporal_l1": 0.018239108535150688,
+            "unexpected_black_fraction": 2.5490519744510365e-06
+          },
+          "uniform": {
+            "loss": 0.03209282134083055,
+            "spatial_l1": 0.013912835025361605,
+            "temporal_l1": 0.018179986315468948,
+            "unexpected_black_fraction": 2.5490519744510365e-06
+          }
+        },
+        "dragon_view_04_right_wave_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03615662712781202,
+            "spatial_l1": 0.015391090352620398,
+            "temporal_l1": 0.020765536775191624,
+            "unexpected_black_fraction": 4.409171132075633e-06
+          },
+          "uniform": {
+            "loss": 0.03590301996363061,
+            "spatial_l1": 0.015234734996088914,
+            "temporal_l1": 0.020668284967541695,
+            "unexpected_black_fraction": 1.2676367207729658e-05
+          }
+        },
+        "dragon_view_05_forward_linear_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.02940166080814032,
+            "spatial_l1": 0.012908659476254667,
+            "temporal_l1": 0.016493001331885655,
+            "unexpected_black_fraction": 1.5569885119605586e-05
+          },
+          "uniform": {
+            "loss": 0.029450433905280772,
+            "spatial_l1": 0.012948691179709775,
+            "temporal_l1": 0.016501742725570995,
+            "unexpected_black_fraction": 1.6258817887709093e-05
+          }
+        },
+        "bathroom_view_00_dolly_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07015093735286168,
+            "spatial_l1": 0.0320454439414399,
+            "temporal_l1": 0.038105493411421776,
+            "unexpected_black_fraction": 0.0002745397951652454
+          },
+          "uniform": {
+            "loss": 0.07001221898411002,
+            "spatial_l1": 0.03194928701434817,
+            "temporal_l1": 0.03806293196976185,
+            "unexpected_black_fraction": 0.00027405753637919716
+          }
+        },
+        "bathroom_view_00_pan_tilt_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07076568529009819,
+            "spatial_l1": 0.03456519544124603,
+            "temporal_l1": 0.03620048984885216,
+            "unexpected_black_fraction": 0.00015990134527653157
+          },
+          "uniform": {
+            "loss": 0.07067390974788439,
+            "spatial_l1": 0.03449159807392529,
+            "temporal_l1": 0.0361823116739591,
+            "unexpected_black_fraction": 0.00015390763045226258
+          }
+        },
+        "bathroom_view_01_linear_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07654882674770697,
+            "spatial_l1": 0.034254643001726696,
+            "temporal_l1": 0.04229418374598026,
+            "unexpected_black_fraction": 0.0007990244905938328
+          },
+          "uniform": {
+            "loss": 0.0765131205497753,
+            "spatial_l1": 0.03424697209681783,
+            "temporal_l1": 0.042266148452957474,
+            "unexpected_black_fraction": 0.000800264525033916
+          }
+        },
+        "bathroom_view_01_wave_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07365200313783828,
+            "spatial_l1": 0.03342818921165807,
+            "temporal_l1": 0.040223813926180206,
+            "unexpected_black_fraction": 0.0003275876477865885
+          },
+          "uniform": {
+            "loss": 0.07365755426386991,
+            "spatial_l1": 0.03343135863542557,
+            "temporal_l1": 0.04022619562844435,
+            "unexpected_black_fraction": 0.0003275187543424961
+          }
+        },
+        "bathroom_view_02_circle_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.09074336281489759,
+            "spatial_l1": 0.04162644275597164,
+            "temporal_l1": 0.04911692005892595,
+            "unexpected_black_fraction": 0.00034660217716009356
+          },
+          "uniform": {
+            "loss": 0.09060708344692275,
+            "spatial_l1": 0.041555838393313546,
+            "temporal_l1": 0.049051245053609215,
+            "unexpected_black_fraction": 0.00034729112043610906
+          }
+        },
+        "bathroom_view_02_orbit_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.06717027258127928,
+            "spatial_l1": 0.03495503589510918,
+            "temporal_l1": 0.0322152366861701,
+            "unexpected_black_fraction": 0.00036286099196201704
+          },
+          "uniform": {
+            "loss": 0.06717027258127928,
+            "spatial_l1": 0.03495503589510918,
+            "temporal_l1": 0.0322152366861701,
+            "unexpected_black_fraction": 0.00036286099196201704
+          }
+        }
+      },
+      "checkpoint_sha256": "11cc0423fb3ba16202720acc7947c6d72c12f294e3cf6131373cfa6c13250243"
+    },
+    "staged-128": {
+      "best": {
+        "epoch": 4,
+        "zero_fraction": 0.0
+      },
+      "completed_epochs": 4,
+      "global_step": 192,
+      "stop_reason": "epoch_target",
+      "native_learned_loss": 0.05176749638289155,
+      "native_uniform_loss": 0.0517209644063509,
+      "native_delta_percent": 0.08996734124109285,
+      "native_vs_warm_percent": -2.2163549059992738,
+      "crop_delta_percent": -0.08196133330578004,
+      "maximum_observed_zero_fraction": 0.0,
+      "peak_sampler_gradient": 0.35839346051216125,
+      "peak_denoiser_gradient": 0.27489814162254333,
+      "native_clip_metrics": {
+        "dragon_view_01_left_dolly_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.02389031500067739,
+            "spatial_l1": 0.01211496682039329,
+            "temporal_l1": 0.011775348180284103,
+            "unexpected_black_fraction": 5.166997457958392e-06
+          },
+          "uniform": {
+            "loss": 0.023891630116850138,
+            "spatial_l1": 0.012115641497075558,
+            "temporal_l1": 0.01177598861977458,
+            "unexpected_black_fraction": 5.166997457958392e-06
+          }
+        },
+        "dragon_view_02_right_orbit_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026398316491395235,
+            "spatial_l1": 0.013019878417253494,
+            "temporal_l1": 0.01337843807414174,
+            "unexpected_black_fraction": 6.407076658173797e-06
+          },
+          "uniform": {
+            "loss": 0.02640404381478826,
+            "spatial_l1": 0.01302819512784481,
+            "temporal_l1": 0.013375848686943451,
+            "unexpected_black_fraction": 6.407076658173797e-06
+          }
+        },
+        "dragon_view_03_left_pan_tilt_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026223779944259496,
+            "spatial_l1": 0.011831552854606084,
+            "temporal_l1": 0.014392227089653412,
+            "unexpected_black_fraction": 5.373677205560463e-06
+          },
+          "uniform": {
+            "loss": 0.026236526823292174,
+            "spatial_l1": 0.011840654537081718,
+            "temporal_l1": 0.014395872286210457,
+            "unexpected_black_fraction": 5.373677205560463e-06
+          }
+        },
+        "dragon_view_04_left_circle_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.032194099034227076,
+            "spatial_l1": 0.01401915427829538,
+            "temporal_l1": 0.018174944755931694,
+            "unexpected_black_fraction": 2.4801587902142534e-06
+          },
+          "uniform": {
+            "loss": 0.032059094336416044,
+            "spatial_l1": 0.013925269645239626,
+            "temporal_l1": 0.018133824691176414,
+            "unexpected_black_fraction": 2.4801587902142534e-06
+          }
+        },
+        "dragon_view_04_right_wave_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.035751798145827796,
+            "spatial_l1": 0.015230509718613965,
+            "temporal_l1": 0.02052128842721383,
+            "unexpected_black_fraction": 4.4091711158346565e-06
+          },
+          "uniform": {
+            "loss": 0.03554857171894539,
+            "spatial_l1": 0.01510398049971887,
+            "temporal_l1": 0.02044459121922652,
+            "unexpected_black_fraction": 1.246968713530805e-05
+          }
+        },
+        "dragon_view_05_forward_linear_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.029359449144630206,
+            "spatial_l1": 0.012930214538105897,
+            "temporal_l1": 0.016429234606524307,
+            "unexpected_black_fraction": 1.5225419442036322e-05
+          },
+          "uniform": {
+            "loss": 0.029409573945615972,
+            "spatial_l1": 0.012970747027013983,
+            "temporal_l1": 0.01643882691860199,
+            "unexpected_black_fraction": 1.5845459042144023e-05
+          }
+        },
+        "bathroom_view_00_dolly_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.06984956979396797,
+            "spatial_l1": 0.03187390337032931,
+            "temporal_l1": 0.037975666423638664,
+            "unexpected_black_fraction": 0.00027254189285486063
+          },
+          "uniform": {
+            "loss": 0.0698092192234028,
+            "spatial_l1": 0.03184462870870318,
+            "temporal_l1": 0.037964590514699616,
+            "unexpected_black_fraction": 0.00027240410700609833
+          }
+        },
+        "bathroom_view_00_pan_tilt_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07065458240963164,
+            "spatial_l1": 0.03455173862831933,
+            "temporal_l1": 0.03610284378131231,
+            "unexpected_black_fraction": 0.0001549410297749481
+          },
+          "uniform": {
+            "loss": 0.07054554325129304,
+            "spatial_l1": 0.03447131094123636,
+            "temporal_l1": 0.036074232310056686,
+            "unexpected_black_fraction": 0.00015087632540858716
+          }
+        },
+        "bathroom_view_01_linear_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07615765352689084,
+            "spatial_l1": 0.034079321793147495,
+            "temporal_l1": 0.04207833173374335,
+            "unexpected_black_fraction": 0.0007802854864036947
+          },
+          "uniform": {
+            "loss": 0.07612318075483754,
+            "spatial_l1": 0.03406997424151216,
+            "temporal_l1": 0.04205320651332537,
+            "unexpected_black_fraction": 0.0007808366252512704
+          }
+        },
+        "bathroom_view_01_wave_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07346438013371967,
+            "spatial_l1": 0.03333782111959798,
+            "temporal_l1": 0.04012655901412169,
+            "unexpected_black_fraction": 0.0003235229395223931
+          },
+          "uniform": {
+            "loss": 0.07346661912188643,
+            "spatial_l1": 0.03333914492811475,
+            "temporal_l1": 0.04012747419377168,
+            "unexpected_black_fraction": 0.0003235229395223931
+          }
+        },
+        "bathroom_view_02_circle_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.09022202458055247,
+            "spatial_l1": 0.04135589354804584,
+            "temporal_l1": 0.04886613103250662,
+            "unexpected_black_fraction": 0.0003400573207597647
+          },
+          "uniform": {
+            "loss": 0.09011358137996424,
+            "spatial_l1": 0.04130324402025768,
+            "temporal_l1": 0.04881033735970656,
+            "unexpected_black_fraction": 0.0003408151408491124
+          }
+        },
+        "bathroom_view_02_orbit_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.0670439883889187,
+            "spatial_l1": 0.034861787887556214,
+            "temporal_l1": 0.03218220050136248,
+            "unexpected_black_fraction": 0.0003601052749867709
+          },
+          "uniform": {
+            "loss": 0.0670439883889187,
+            "spatial_l1": 0.034861787887556214,
+            "temporal_l1": 0.03218220050136248,
+            "unexpected_black_fraction": 0.0003601052749867709
+          }
+        }
+      },
+      "checkpoint_sha256": "f751435ea1ca1d960a3054a65bdb56b716611562963a0cff2de8b746c2a27969"
+    },
+    "zero-curriculum-128": {
+      "best": {
+        "epoch": 4,
+        "zero_fraction": 0.05
+      },
+      "completed_epochs": 4,
+      "global_step": 192,
+      "stop_reason": "epoch_target",
+      "native_learned_loss": 0.055084574485330697,
+      "native_uniform_loss": 0.052532369509294984,
+      "native_delta_percent": 4.85834733874726,
+      "native_vs_warm_percent": 4.049275278604103,
+      "crop_delta_percent": 0.0417418637500333,
+      "maximum_observed_zero_fraction": 0.04928342501322428,
+      "peak_sampler_gradient": 0.5737496018409729,
+      "peak_denoiser_gradient": 0.27935996651649475,
+      "native_clip_metrics": {
+        "dragon_view_01_left_dolly_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.024622792799380563,
+            "spatial_l1": 0.012624601168291909,
+            "temporal_l1": 0.011998191631088654,
+            "unexpected_black_fraction": 9.920634754832594e-06
+          },
+          "uniform": {
+            "loss": 0.02425895504919546,
+            "spatial_l1": 0.01237353975219386,
+            "temporal_l1": 0.0118854152970016,
+            "unexpected_black_fraction": 9.851741830451438e-06
+          }
+        },
+        "dragon_view_02_right_orbit_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.027273409379025303,
+            "spatial_l1": 0.013626758940517902,
+            "temporal_l1": 0.013646650438507399,
+            "unexpected_black_fraction": 1.2400793886107359e-05
+          },
+          "uniform": {
+            "loss": 0.026872439531698114,
+            "spatial_l1": 0.01334565838000604,
+            "temporal_l1": 0.013526781151692072,
+            "unexpected_black_fraction": 1.2331900588183739e-05
+          }
+        },
+        "dragon_view_03_left_pan_tilt_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026902154221066406,
+            "spatial_l1": 0.01216741292072194,
+            "temporal_l1": 0.014734741300344467,
+            "unexpected_black_fraction": 6.682650044760001e-06
+          },
+          "uniform": {
+            "loss": 0.02665996542643933,
+            "spatial_l1": 0.012059610869203295,
+            "temporal_l1": 0.014600354557236036,
+            "unexpected_black_fraction": 6.682650044760001e-06
+          }
+        },
+        "dragon_view_04_left_circle_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.0332418049109124,
+            "spatial_l1": 0.014439977306340421,
+            "temporal_l1": 0.01880182760457198,
+            "unexpected_black_fraction": 4.133597810453336e-06
+          },
+          "uniform": {
+            "loss": 0.03266623097338847,
+            "spatial_l1": 0.014193488684083735,
+            "temporal_l1": 0.018472742289304733,
+            "unexpected_black_fraction": 4.340277882874943e-06
+          }
+        },
+        "dragon_view_04_right_wave_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03852572061476253,
+            "spatial_l1": 0.0163214969049607,
+            "temporal_l1": 0.022204223709801834,
+            "unexpected_black_fraction": 5.511463752684774e-06
+          },
+          "uniform": {
+            "loss": 0.036774923537103904,
+            "spatial_l1": 0.01564484754843371,
+            "temporal_l1": 0.02113007598867019,
+            "unexpected_black_fraction": 1.3227513006443456e-05
+          }
+        },
+        "dragon_view_05_forward_linear_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03052103058213279,
+            "spatial_l1": 0.013364772977573531,
+            "temporal_l1": 0.01715625760455926,
+            "unexpected_black_fraction": 2.493937446550782e-05
+          },
+          "uniform": {
+            "loss": 0.029886062611781415,
+            "spatial_l1": 0.013152268449110644,
+            "temporal_l1": 0.016733794162670772,
+            "unexpected_black_fraction": 2.5834987387237822e-05
+          }
+        },
+        "bathroom_view_00_dolly_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.0738353097722644,
+            "spatial_l1": 0.03432440837579114,
+            "temporal_l1": 0.03951090139647325,
+            "unexpected_black_fraction": 0.0002921764833640087
+          },
+          "uniform": {
+            "loss": 0.07118923944376764,
+            "spatial_l1": 0.03255471507353442,
+            "temporal_l1": 0.038634524370233216,
+            "unexpected_black_fraction": 0.00029555225429638606
+          }
+        },
+        "bathroom_view_00_pan_tilt_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07151929111707778,
+            "spatial_l1": 0.034397147063698084,
+            "temporal_l1": 0.03712214405337969,
+            "unexpected_black_fraction": 0.00020406194042672205
+          },
+          "uniform": {
+            "loss": 0.07185409856694086,
+            "spatial_l1": 0.03480862533407552,
+            "temporal_l1": 0.037045473232865334,
+            "unexpected_black_fraction": 0.00021722057395631315
+          }
+        },
+        "bathroom_view_01_linear_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.08390812371813115,
+            "spatial_l1": 0.03748754145843642,
+            "temporal_l1": 0.04642058225969473,
+            "unexpected_black_fraction": 0.0008165233408102982
+          },
+          "uniform": {
+            "loss": 0.07758536473626182,
+            "spatial_l1": 0.03490344967160906,
+            "temporal_l1": 0.04268191506465276,
+            "unexpected_black_fraction": 0.000847249806351361
+          }
+        },
+        "bathroom_view_01_wave_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.08576312625692004,
+            "spatial_l1": 0.03809207890714918,
+            "temporal_l1": 0.047671047349770866,
+            "unexpected_black_fraction": 0.0003538359776160048
+          },
+          "uniform": {
+            "loss": 0.0743005204768408,
+            "spatial_l1": 0.03379072781120028,
+            "temporal_l1": 0.04050979266564051,
+            "unexpected_black_fraction": 0.0003576251219783444
+          }
+        },
+        "bathroom_view_02_circle_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.09167316804329553,
+            "spatial_l1": 0.042018450796604156,
+            "temporal_l1": 0.049654717246691384,
+            "unexpected_black_fraction": 0.00034908233802915286
+          },
+          "uniform": {
+            "loss": 0.09118271530384109,
+            "spatial_l1": 0.04193197350416865,
+            "temporal_l1": 0.04925074179967245,
+            "unexpected_black_fraction": 0.000367959112086932
+          }
+        },
+        "bathroom_view_02_orbit_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07322896240899959,
+            "spatial_l1": 0.03993759676814079,
+            "temporal_l1": 0.03329136564085881,
+            "unexpected_black_fraction": 0.00038056656330809346
+          },
+          "uniform": {
+            "loss": 0.06715791845428093,
+            "spatial_l1": 0.03531202194946153,
+            "temporal_l1": 0.03184589650481939,
+            "unexpected_black_fraction": 0.00038346010920317246
+          }
+        }
+      },
+      "checkpoint_sha256": "9ffa543ac55711dbf6c34306b72eaf68b09fcfa30ed394dd6f79147380552369"
+    },
+    "zero-relaxation-128": {
+      "best": {
+        "epoch": 4,
+        "zero_fraction": 0.05
+      },
+      "completed_epochs": 4,
+      "global_step": 192,
+      "stop_reason": "epoch_target",
+      "native_learned_loss": 0.05171175386076645,
+      "native_uniform_loss": 0.05161133864598851,
+      "native_delta_percent": 0.19456037648375446,
+      "native_vs_warm_percent": -2.321646978843772,
+      "crop_delta_percent": -0.19408600634830409,
+      "maximum_observed_zero_fraction": 0.0,
+      "peak_sampler_gradient": 0.6077926754951477,
+      "peak_denoiser_gradient": 0.27499449253082275,
+      "native_clip_metrics": {
+        "dragon_view_01_left_dolly_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.02399114171220433,
+            "spatial_l1": 0.012128342342163836,
+            "temporal_l1": 0.011862799370040497,
+            "unexpected_black_fraction": 5.098103818974258e-06
+          },
+          "uniform": {
+            "loss": 0.02397836283558891,
+            "spatial_l1": 0.012118103647870677,
+            "temporal_l1": 0.011860259187718233,
+            "unexpected_black_fraction": 5.098103818974258e-06
+          }
+        },
+        "dragon_view_02_right_orbit_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.026410778895730062,
+            "spatial_l1": 0.012972280915294374,
+            "temporal_l1": 0.01343849798043569,
+            "unexpected_black_fraction": 6.338183279045292e-06
+          },
+          "uniform": {
+            "loss": 0.026432044560178405,
+            "spatial_l1": 0.012991182106946195,
+            "temporal_l1": 0.013440862453232208,
+            "unexpected_black_fraction": 6.338183279045292e-06
+          }
+        },
+        "dragon_view_03_left_pan_tilt_slow": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.02629130411272248,
+            "spatial_l1": 0.011818798258900642,
+            "temporal_l1": 0.014472505853821835,
+            "unexpected_black_fraction": 5.166997392994485e-06
+          },
+          "uniform": {
+            "loss": 0.02631672558241657,
+            "spatial_l1": 0.011836593438472067,
+            "temporal_l1": 0.014480132143944502,
+            "unexpected_black_fraction": 5.166997392994485e-06
+          }
+        },
+        "dragon_view_04_left_circle_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03219179959879035,
+            "spatial_l1": 0.013964325455682618,
+            "temporal_l1": 0.01822747414310773,
+            "unexpected_black_fraction": 2.066798905226668e-06
+          },
+          "uniform": {
+            "loss": 0.03206518500865925,
+            "spatial_l1": 0.013877305734370435,
+            "temporal_l1": 0.018187879274288814,
+            "unexpected_black_fraction": 2.066798905226668e-06
+          }
+        },
+        "dragon_view_04_right_wave_fast": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.03614292018825099,
+            "spatial_l1": 0.015383669840438026,
+            "temporal_l1": 0.02075925034781297,
+            "unexpected_black_fraction": 5.166997295548624e-06
+          },
+          "uniform": {
+            "loss": 0.035883828199335506,
+            "spatial_l1": 0.015234039298125676,
+            "temporal_l1": 0.02064978890120983,
+            "unexpected_black_fraction": 1.1849647047971043e-05
+          }
+        },
+        "dragon_view_05_forward_linear_medium": {
+          "scene": "dragon",
+          "complete": true,
+          "learned": {
+            "loss": 0.02948248479515314,
+            "spatial_l1": 0.012897362932562828,
+            "temporal_l1": 0.016585121862590313,
+            "unexpected_black_fraction": 1.4812058874927711e-05
+          },
+          "uniform": {
+            "loss": 0.02951793567765327,
+            "spatial_l1": 0.012926537011350905,
+            "temporal_l1": 0.016591398666302364,
+            "unexpected_black_fraction": 1.4949845470774953e-05
+          }
+        },
+        "bathroom_view_00_dolly_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.06977893935427779,
+            "spatial_l1": 0.031912539420383315,
+            "temporal_l1": 0.03786639993389448,
+            "unexpected_black_fraction": 0.0002823936282376443
+          },
+          "uniform": {
+            "loss": 0.06961485388733092,
+            "spatial_l1": 0.03180430723088128,
+            "temporal_l1": 0.03781054665644964,
+            "unexpected_black_fraction": 0.00028404706524400226
+          }
+        },
+        "bathroom_view_00_pan_tilt_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.0707090427832944,
+            "spatial_l1": 0.03446626716426441,
+            "temporal_l1": 0.03624277561903,
+            "unexpected_black_fraction": 0.00017498897705081617
+          },
+          "uniform": {
+            "loss": 0.07054391157414232,
+            "spatial_l1": 0.03434458960379873,
+            "temporal_l1": 0.03619932197034359,
+            "unexpected_black_fraction": 0.00017161320881444096
+          }
+        },
+        "bathroom_view_01_linear_medium": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.07531011539200941,
+            "spatial_l1": 0.03378507308661938,
+            "temporal_l1": 0.04152504230539004,
+            "unexpected_black_fraction": 0.0008063960503932321
+          },
+          "uniform": {
+            "loss": 0.07523590991539614,
+            "spatial_l1": 0.0337579111967768,
+            "temporal_l1": 0.04147799871861935,
+            "unexpected_black_fraction": 0.0008007468030492808
+          }
+        },
+        "bathroom_view_01_wave_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.0732001064433938,
+            "spatial_l1": 0.03324921163065093,
+            "temporal_l1": 0.03995089481274287,
+            "unexpected_black_fraction": 0.0003396439621740553
+          },
+          "uniform": {
+            "loss": 0.0731241185040701,
+            "spatial_l1": 0.03320510472570147,
+            "temporal_l1": 0.03991901377836863,
+            "unexpected_black_fraction": 0.0003419174368640857
+          }
+        },
+        "bathroom_view_02_circle_fast": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.08992093792628675,
+            "spatial_l1": 0.04128020309976169,
+            "temporal_l1": 0.048640734826525055,
+            "unexpected_black_fraction": 0.00034508652554775054
+          },
+          "uniform": {
+            "loss": 0.08983393536791914,
+            "spatial_l1": 0.04123762835349355,
+            "temporal_l1": 0.0485963070144256,
+            "unexpected_black_fraction": 0.0003510802458289878
+          }
+        },
+        "bathroom_view_02_orbit_slow": {
+          "scene": "bathroom",
+          "complete": true,
+          "learned": {
+            "loss": 0.06711147512708392,
+            "spatial_l1": 0.0348865349910089,
+            "temporal_l1": 0.03222494013607502,
+            "unexpected_black_fraction": 0.0003750551149031318
+          },
+          "uniform": {
+            "loss": 0.06678925263917163,
+            "spatial_l1": 0.03463690195764814,
+            "temporal_l1": 0.03215235068152348,
+            "unexpected_black_fraction": 0.00037719079526660996
+          }
+        }
+      },
+      "checkpoint_sha256": "958b958cf22dfae34dae76859d75b613705c0c25c0d6ff0dd794ce7495180e99"
+    }
+  },
+  "source_sha256": {
+    "src/wavefront_denoiser/allocation.py": "4e3a0c3367113f0d938d1423d2aad4495d76be03b5e7e2428f0c319b13570300",
+    "src/wavefront_denoiser/__init__.py": "b779761e71ae5ba0116eae3bb99cc739caa5b0930e007409d7444b059acd81e7",
+    "src/wavefront_denoiser/adaptive_dataset.py": "868e0fc8821ccc3a9fe5d7d946ec635983e650196ec967ad04a83feb849530f4",
+    "src/wavefront_denoiser/dataset_generation.py": "599fa279239dbe21eb6f2e96ee1163102ced447c8f5aa52d3fce04913260007f",
+    "src/wavefront_denoiser/__main__.py": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
+    "src/wavefront_denoiser/layer_compatibility.py": "a1d6cc2723a787cb06a1e7ff9def7a552bb32f6fb500d2517042d957fbe534aa",
+    "src/wavefront_denoiser/sample_layers.py": "9ce3d8a37b0d2f3fedb9869919b766dbe3cc68f7c4d8f8721f6f7734af6396a4",
+    "src/wavefront_denoiser/inline_sample_layers.py": "02bc25f8b2111b02673a44d3641af350790e35ff25a3533a3b747aca70ff4a87",
+    "src/wavefront_denoiser/lighting_experiment.py": "26b3ee684a9fd1f294e0c418647b3037f5b186d7866c562e6e1298d35a35bd5a",
+    "src/wavefront_denoiser/joint.py": "ff1c9402127641ab303a100be07016979f0fb335f85d54d220cb4f1f89225d81",
+    "src/wavefront_denoiser/joint_data.py": "6da83c24233bd475618a0f3ba8c613b74db222786fb3de1552d4007ff3461d76",
+    "src/wavefront_denoiser/b2_native.py": "7bf377ee3bcb1787d225365f2378803c41a1ea62c90362620d6843cd6ef7f583",
+    "src/wavefront_denoiser/metrics.py": "79a1858a99239c47d17d3429e4fcb0951cf0c29a7b1dc78c594cf3dcd7f2b234",
+    "src/wavefront_denoiser/ntasad_radiance.py": "fefb33cf17c2ae340bb44773ed3ea85b33140f0e97e8a3f193fc6bdde4da0f15",
+    "src/wavefront_denoiser/preview.py": "b6dbcf26a84869c9287f3df1731086dfc7c913bed3babf60e90a3fb7c116007a",
+    "src/wavefront_denoiser/image_io.py": "c23f78b7f1db40e7bda311dbc382e5744a13b8c8791bdf28cfac75b288717249",
+    "src/wavefront_denoiser/temporal.py": "39bc39aece8134bf15a9eae9aa0836c5f838cd84c819dce30aebbdcc33012a73",
+    "src/wavefront_denoiser/sequence_data.py": "7f157fd55b604dd18ce3c91797f2bafe6e0fd13fe5a3224b032fefb79b322a75",
+    "src/wavefront_denoiser/viewpoint_selection.py": "ade3242ca3dace1987f8d6303fc39c37074840ebff1c93fe656ca579412aefe6",
+    "src/wavefront_denoiser/adaptive_data.py": "bee449167c4a55e75827c3fbaaad05bdc016d2cd8eb6cc813f7831c7a7e9d449",
+    "src/wavefront_denoiser/dataset_splits.py": "9c1e665780ef1b6ced7705db0848534a6e4b524e11dfb3f881f6db3b25b10670",
+    "src/wavefront_denoiser/device.py": "1f013ad041e3e4b043ffae07fee3a58b42096332f94f341e9ac07eb77569dd01",
+    "src/wavefront_denoiser/training_defaults.py": "e142b4627d0937568de4a5a54f0e4b4c52ce684a8a2b052301d1f9d9f337fdb0",
+    "src/wavefront_denoiser/decoded_cache.py": "70729eed0fccd0fbee49bd3efc5a864eedda32d979ea31af989b28d7c08dd318",
+    "src/wavefront_denoiser/joint_checkpoint.py": "249fceb799bc3745cdb37a81d2a6adce9bf9536fb1faee14e5a0eec12a6a6205",
+    "src/wavefront_denoiser/renderer_gradient.py": "af387db4ed65427ef7631c0f5612b1754d1fe606bf74841191fa12f015fa51cd",
+    "src/wavefront_denoiser/r2_archive.py": "a3c692abdb67d919406e22384dfd399fe2714f12beba3b35dbbc2a146d694e88",
+    "src/wavefront_denoiser/frames.py": "2885615e9c180ec14c90582d40756ec4173f4fa47fe6731034816bbaeb3474d7",
+    "src/wavefront_denoiser/capture_history.py": "c3eeb3d1ef14aad05656ca8251e810e1f951a80841640bcbf3a4830ce6476948",
+    "src/wavefront_denoiser/r2_streaming.py": "b8b14081261a2d0a328bc223d7694b39f7f473c71a9b09cd2c9eb4be04ab9621",
+    "src/wavefront_denoiser/adaptive.py": "6f04c070fb22b5340f19f8e6333967fd9396cf1648b3a055e5338d3306e10cff",
+    "src/wavefront_denoiser/r2_native.py": "f4bf081d51863b2e4b236aabad322046e4f27e31d885fd3c4a1faebabae7ddb1",
+    "src/wavefront_denoiser/reference_convergence.py": "bf6103a81f17166e7f96ee1708764d2b3b9b3339f70503adb6453d148b73aaf7",
+    "src/wavefront_denoiser/joint_training.py": "31e8e19f74056d8cd11ff7ad6056e6261deb48097d0906d7a649690c1e04434f",
+    "src/wavefront_denoiser/training.py": "36cf34a7e4986b29ed184e34072435143b8ab537ee7d38f3b762293077cfebf2",
+    "src/wavefront_denoiser/loss.py": "d7108295d9d3a1b2ecd5f2103251890f9dcd236187e6507ffc01308ebd2a3936",
+    "src/wavefront_denoiser/sequences.py": "b7d21c9a3a89f25d2c932363aa96e2f22727d8de94efdc8f25e72b9f28393bf8",
+    "src/wavefront_denoiser/joint_loading.py": "b8b1f71c5d5e4910e2bd39a8c191c0a2107138c1ab13e8c7d3455a3f0a0db2f3",
+    "src/wavefront_denoiser/model.py": "c6f494006a78c4ba044e630849200f5747e84c7bfdcd24450a5d05ae9078d9ad",
+    "src/wavefront_denoiser/runtime.py": "b1944cc054f7b28eaf7e84f2fa0a98ee84e00e31e37a4a0f661127b0607110cb",
+    "src/wavefront_denoiser/cli.py": "583b5577ac28d20ba10b85118ab1f4e085db2517c562951ef0ddd4464e45916e",
+    "src/wavefront_denoiser/b2_archive.py": "7cd90423fcfb93b2877f546777cad8826353a1e2fb8b830c241e82ce2166b95e",
+    "src/wavefront_denoiser/adaptive_model.py": "a9742e6e87af8a9bbc3cd0262df68af071582d1ebe1046ea85a8902dc31e5fb3",
+    "src/wavefront_denoiser/checkpoint.py": "3a09062efd954756d988effc40e30ea399b235bdedd66e7618442d7472bd10db",
+    "src/wavefront_denoiser/distributed/__init__.py": "9e9c1b371f5e76c7f92d279b3c51d87484b77af682e7e5826ffab5e7488c2b02",
+    "src/wavefront_denoiser/distributed/worker.py": "2c21481f327355a8861aa84155f41877d7b110aef3963d94e09e8b7d79eff99d",
+    "src/wavefront_denoiser/distributed/coordinator.py": "207bec943806b1487bff1fe7f9656923269021aef1e06e3ce76ff8320af2aee1",
+    "src/wavefront_denoiser/distributed/store.py": "6b338ef7be085de7411409594d646e9ff7c4df96cce9f23b978c540cb1b31836",
+    "src/wavefront_denoiser/distributed/plan.py": "8e7a07bfb7a055e39cfef6832b0ae7b5187df6ded6cda091ee621919d8ab253d",
+    "src/wavefront_denoiser/distributed/backfill_cli.py": "b70ec7c70ed00f0574b4d76104ffd2b9a89884eb9f6ec4b99b8d181b12d8b078",
+    "src/wavefront_denoiser/distributed/cli.py": "b5afda15a669feba5b0f2341768b708b7687cf6fda397f0669d207ae400268b2",
+    "src/wavefront_denoiser/distributed/backfill.py": "865081c174e3e280537cbdf98d7ecc2e2bad91b90b026da98bec11b68f7be593",
+    "tools/diagnose_quality_collapse.py": "1d98ec9d48e22bc2ae9990a4120a99e2e4f73f85d5c248c42f77446d67e1d294",
+    "tools/run_final_quality_suite.py": "ce5e1162db605164b48e6242133a2f5d62f3fc97ae13c080007ac53a917d5f81",
+    "tools/final_quality_model.py": "dc169321004f13c14ab3381a0c4d3f8e64250b9b6e527ddd825f9e074b83bf1e",
+    "tools/final_quality_native.py": "1c2ee5fa2a0077a8c790bcc40f9d7a96b071b94101438149505c8a9f9024bee1"
+  },
+  "maximum_monitored_memory_fraction": {
+    "host": 0.03689703330793357,
+    "gpu": 0.3466064453125
+  }
+}

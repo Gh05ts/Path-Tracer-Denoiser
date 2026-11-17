@@ -1,0 +1,20 @@
+{
+  "format": "wavefront-collapse-plan",
+  "version": 1,
+  "source_run": "../runs/bmw-living-quality-2h",
+  "config": "quality-bmw-living-2h.json",
+  "arms": ["baseline", "uniform", "frozen"],
+  "max_epochs": 12,
+  "total_seconds": 1800,
+  "arm_seconds": 480,
+  "report_reserve_seconds": 60,
+  "torch_allocator_fraction": 0.75,
+  "monitor_stop_fraction": 0.79,
+  "memory_limit_fraction": 0.8,
+  "detail_every_steps": 24,
+  "anomaly_thresholds": {
+    "sampler_gradient_norm": 100,
+    "zero_fraction": 0.5,
+    "unavailable_fraction": 0.5
+  }
+}

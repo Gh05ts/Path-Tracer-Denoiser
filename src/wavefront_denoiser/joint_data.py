@@ -150,6 +150,8 @@ def joint_inventory(root, selections=None, *, verify_images=True):
     record_root = root/"decoded" if decoded else root/"frames"
     result = {"dataset_manifest_sha256":digest(root/dataset_manifest),"test_pixels_loaded":False,
               "partitions":descriptor["partitions"],"reference_status":descriptor["reference_status"]}
+    if "experiment_split_sha256" in descriptor:
+        result["experiment_split_sha256"] = descriptor["experiment_split_sha256"]
     selections = selections or {p:descriptor["partitions"][p] for p in ("train","validation")}
     if set(selections) != {"train","validation"}:
         raise ValueError("Joint inventory needs train/validation selections only")
