@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import time
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -13,6 +14,8 @@ import torch
 from wavefront_denoiser.adaptive_data import read_v5_dataset
 from wavefront_denoiser.allocation import allocate_samples
 from wavefront_denoiser.image_io import write_rgb_exr
+from wavefront_denoiser.inference_preview import (allocation_images, allocation_legend,
+                                                 separate_directories, select_scene_groups)
 from wavefront_denoiser.joint_checkpoint import load_joint_checkpoint
 from wavefront_denoiser.model import INPUT_CHANNELS
 from wavefront_denoiser.model_artifacts import download_bundle, verify_bundle
@@ -105,12 +108,15 @@ def score(encoded, reference, previous):
 @torch.inference_mode()
 def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposure=1.,
                boxes=None, crop_size=160, fps=6., hdr=False):
+    started = time.perf_counter()
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
     states = {'adaptive': None, 'uniform': None}; previous = {'adaptive': None, 'uniform': None}
     animations = []; records = []; last_images = None; last_linear = None
     count_frames = descriptor['groups'][group]['frame_count']
     for index in range(count_frames):
+        frame_started = time.perf_counter()
         loaded = source.load_frame(group, index)
+        loaded_at = time.perf_counter()
         base, layers = loaded.base, loaded.layers
         reference = torch.from_numpy(np.array(base.buffers['reference'], copy=True)).permute(2, 0, 1)
         dtype = next(model.parameters()).dtype
@@ -141,12 +147,22 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
             metrics['unavailable_fraction'] = float((~states[variant].valid).float().mean())
             row[variant] = metrics
             linear[variant+'-denoised'] = decode_radiance(encoded)
+        if torch.device(device).type == 'cuda': torch.cuda.synchronize(device)
+        inferred_at = time.perf_counter()
         images = {k: Image.fromarray(display_rgb(v.numpy().transpose(1, 2, 0), exposure)) for k, v in linear.items()}
         folder = output/f'frame_{index:06d}'; folder.mkdir()
         for name, image in images.items(): image.save(folder/(name+'.png'))
-        np.save(folder/'sample-count.npy', counts[0, 0].cpu().numpy().astype(np.uint8))
+        count_map = counts[0, 0].cpu().numpy().astype(np.uint8)
+        np.save(folder/'sample-count.npy', count_map)
+        maps = allocation_images(count_map, model.max_spp)
+        for name, image in maps.items(): image.save(folder/(name+'.png'))
         animations.append(strip(images, note=f'Frame {index}'+(' - uniform initialization' if index == 0 else '')))
+        row['timing'] = {'load_seconds': loaded_at-frame_started,
+                         'inference_and_metrics_seconds': inferred_at-loaded_at,
+                         'image_export_seconds': time.perf_counter()-inferred_at,
+                         'total_seconds': time.perf_counter()-frame_started}
         records.append(row); last_images, last_linear = images, linear
+        print(f'{group}: frame {index+1}/{count_frames} ready ({row["timing"]["total_seconds"]:.2f}s)', flush=True)
         del loaded, base, layers, bank, frame, adaptive_input, noisy, counts, uniform_counts
     reference = last_linear['reference'].numpy().transpose(1, 2, 0)
     h, w = reference.shape[:2]
@@ -154,6 +170,9 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
     boxes = checked_boxes(boxes if explicit_crops else crop_boxes(reference, crop_size), w, h)
     strip(last_images, width=w, boxes=boxes, note='Matched crops; one shared exposure').save(output/'comparison-native.png')
     strip(last_images, names=tuple(LABELS), width=480).save(output/'controls.png')
+    for name, image in maps.items(): image.save(output/(name+'.png'))
+    np.save(output/'sample-count.npy', count_map)
+    allocation_legend(model.max_spp).save(output/'allocation-legend.png')
     for j, (x, y, cw, ch) in enumerate(boxes):
         folder = output/f'crop_{j+1:02d}'; folder.mkdir()
         crops = {name: image.crop((x, y, x+cw, y+ch)) for name, image in last_images.items()}
@@ -162,6 +181,11 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
             image.resize((cw*3, ch*3), RESAMPLE.NEAREST).save(folder/(name+'-3x.png'))
         strip(crops, width=cw).save(folder/'comparison.png')
         strip(crops, names=tuple(LABELS), width=cw).save(folder/'controls.png')
+        np.save(folder/'sample-count.npy', count_map[y:y+ch, x:x+cw])
+        for name, image in maps.items():
+            crop = image.crop((x, y, x+cw, y+ch))
+            crop.save(folder/(name+'.png'))
+            crop.resize((cw*3, ch*3), RESAMPLE.NEAREST).save(folder/(name+'-3x.png'))
     if hdr:
         for name, value in last_linear.items():
             write_rgb_exr(output/(name+'.exr'), value.numpy().transpose(1, 2, 0))
@@ -173,6 +197,10 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
               'reference_source_config': descriptor['groups'][group]['source_config'],
               'reference_status': descriptor.get('reference_status'), 'gif_playback_fps': fps,
               'reference_supplied_to_prediction': False, 'test_pixels_loaded': partition == 'test',
+              'elapsed_seconds': time.perf_counter()-started,
+              'allocation_display': {'quantity': 'actual integer samples per pixel', 'minimum': 0,
+                  'maximum': model.max_spp, 'grayscale': 'linear', 'blue': 'log2(1+spp)/log2(1+maximum)',
+                  'higher_samples': 'darker blue', 'normalization': 'fixed across frames and scenes'},
               'scope': 'Offline independent-layer replay; native global allocation, independent histories. Not live renderer speed.'}
     for variant in states:
         spatial = [r[variant]['spatial_encoded_l1'] for r in records[1:]]
@@ -184,9 +212,15 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
 
 
 def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=None,
-             crop_size=160, fps=6., hdr=False, all_validation=False, include_test=False, all_test=False):
+             crop_size=160, fps=6., hdr=False, all_validation=False, include_test=False, all_test=False,
+             scenes=None, download_directory=None, preview=False):
+    started = time.perf_counter()
     bundle, output = Path(bundle), Path(output)
     if output.exists(): raise FileExistsError('Presentation output already exists')
+    if download_directory is not None:
+        download_directory = Path(download_directory)
+        separate_directories(bundle, output, download_directory)
+        if download_directory.exists(): raise FileExistsError('Choose a new download directory')
     if not math.isfinite(exposure) or exposure <= 0 or not 0 < fps <= 60 or crop_size < 1:
         raise ValueError('Invalid exposure, FPS or crop size')
     if all_test and not include_test:
@@ -204,21 +238,28 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
     if joint_inventory(metadata, record['selected'], verify_images=False) != expected:
         raise ValueError('Presentation metadata differs from trained inventory')
     descriptor = read_v5_dataset(metadata)
+    if scenes is not None:
+        if groups is not None or all_validation or all_test:
+            raise ValueError('Scene previews cannot also select groups or entire partitions')
+        groups = select_scene_groups(descriptor, payload['dataset_split']['selected']['validation'], scenes)
+        include_test = 'sponza' in scenes
     selected = {'validation': payload['dataset_split']['selected']['validation']}
     if include_test:
         if record['layout'] != 'decoded':
             raise ValueError('Held-out presentation requires a decoded training snapshot')
         selected['test'] = descriptor['partitions']['test']
     allowed = {g for names in selected.values() for g in names}
-    selection_rule = 'explicit groups' if groups is not None else 'first lexicographic clip per scene; all clips for requested partitions'
+    selection_rule = ('one clip per requested scene; fixed Sponza circle camera' if scenes is not None else
+                      'explicit groups' if groups is not None else
+                      'first lexicographic clip per scene; all clips for requested partitions')
     if groups is None:
         groups = []
         for partition, names in selected.items():
-            scenes = set()
+            seen_scenes = set()
             for group in sorted(names):
                 scene = descriptor['groups'][group]['scene']
-                if (all_validation if partition == 'validation' else all_test) or scene not in scenes:
-                    groups.append(group); scenes.add(scene)
+                if (all_validation if partition == 'validation' else all_test) or scene not in seen_scenes:
+                    groups.append(group); seen_scenes.add(scene)
     if not groups or len(set(groups)) != len(groups) or set(groups)-allowed:
         raise ValueError('Choose unique validation clips from the frozen trained inventory; '
                          'reserved test clips also require --include-test')
@@ -231,6 +272,8 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
     groups_by_partition = {p: [g for g in groups if g in names] for p, names in selected.items()}
     checkpoint_sha256 = hashlib.sha256((bundle/'weights.pt').read_bytes()).hexdigest()
     output.mkdir(parents=True)
+    workspace = download_directory if download_directory is not None else output
+    if download_directory is not None: workspace.mkdir(parents=True, exist_ok=False)
     # Publish the chosen checkpoint and protocol before fetching any test metadata/pixels.
     protocol = {'checkpoint_sha256': checkpoint_sha256, 'epoch': payload['epoch'],
                 'global_step': payload['global_step'], 'groups_by_partition': groups_by_partition,
@@ -238,19 +281,21 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
                 'dataset_manifest_sha256': expected['dataset_manifest_sha256'],
                 'exposure': exposure, 'crops': crop_spec, 'crop_size': crop_size, 'fps': fps, 'hdr': hdr,
                 'weights_updated': False, 'test_used_for_checkpoint_selection': False}
+    protocol.update(purpose='visual_preview' if preview else 'presentation', scenes=scenes)
     write_json(output/'evaluation-protocol.json', protocol)
     test_groups = groups_by_partition.get('test', [])
     test_source = None
     if test_groups:
-        prepare_r2_test_metadata(record['source'], output/'test-metadata', groups=test_groups,
+        prepare_r2_test_metadata(record['source'], workspace/'test-metadata', groups=test_groups,
                                  training_metadata=metadata, trained_inventory=expected)
-        test_source = R2FrameSource(output/'test-metadata', record['source'], layout='decoded',
-                                   spool_directory=output/'spool', allow_test=True)
+        test_source = R2FrameSource(workspace/'test-metadata', record['source'], layout='decoded',
+                                   spool_directory=workspace/'spool', allow_test=True)
         test_source.preflight()
-    source = R2FrameSource(metadata, record['source'], layout=record['layout'], spool_directory=output/'spool')
+    source = R2FrameSource(metadata, record['source'], layout=record['layout'], spool_directory=workspace/'spool')
     if groups_by_partition['validation']: source.preflight()
     results = []
     torch.set_num_threads(4)
+    if torch.device(device).type == 'cuda': torch.cuda.reset_peak_memory_stats(device)
     for group in groups:
         frame_source = test_source if group in test_groups else source
         results.append(infer_clip(model, frame_source, descriptor, group, output/group, device=device, exposure=exposure,
@@ -261,12 +306,20 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
               'epoch': payload['epoch'], 'model_spec': model.specification(), 'r2': source.stats,
               'test_r2': test_source.stats if test_source else None,
               'clips': results, 'complete': True, 'test_pixels_loaded': bool(test_groups), 'weights_updated': False}
+    report.update(purpose=protocol['purpose'], scenes=scenes, elapsed_seconds=time.perf_counter()-started,
+                  peak_gpu_allocated_bytes=(torch.cuda.max_memory_allocated(device)
+                                            if torch.device(device).type == 'cuda' else None))
+    if preview: report['coverage'] = 'Selected clips for visual comparison; not full validation or evaluation'
     write_json(output/'presentation.json', report)
-    links = ['# Presentation outputs', '', 'Native frames, matched crops, controls and GIFs use one shared exposure.', '']
+    links = ['# '+('Inference previews' if preview else 'Presentation outputs'), '',
+             'Native frames, matched crops, controls and GIFs use one shared exposure.', '']
+    if preview: links += [report['coverage']+'.', '']
     for group in groups:
         partition = 'test' if group in test_groups else 'validation'
         links += [f'## {group} ({partition})', '', f'![comparison]({group}/comparison-native.png)', '',
-                  f'![animation]({group}/comparison.gif)', '', f'[All controls]({group}/controls.png)', '']
+                  f'![animation]({group}/comparison.gif)', '', f'[All controls]({group}/controls.png)', '',
+                  f'![Actual sample allocation]({group}/allocation-heatmap.png)', '',
+                  f'![Sample allocation scale]({group}/allocation-legend.png)', '']
     (output/'index.md').write_text('\n'.join(links))
     return report
 

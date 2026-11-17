@@ -22,6 +22,18 @@ def safe_relative(name):
 
 
 def build_bundle(checkpoint, metadata, output, *, include_resume=False, results=None):
+    """Pin one complete checkpoint even while the trainer replaces its best file."""
+    checkpoint = Path(checkpoint)
+    if Path(output).exists(): raise FileExistsError('Bundle output already exists')
+    # Trainer saves use atomic replacement. Opening/copying once pins the old or
+    # new complete file; all weights, resume bytes and hashes then share it.
+    with tempfile.TemporaryDirectory(prefix='ntasad-checkpoint-') as name:
+        frozen = Path(name)/checkpoint.name
+        shutil.copyfile(checkpoint, frozen)
+        return _build_bundle(frozen, metadata, output, include_resume=include_resume, results=results)
+
+
+def _build_bundle(checkpoint, metadata, output, *, include_resume=False, results=None):
     """Keep original model/policies/provenance; strip Adam/RNG for inference."""
     checkpoint, metadata, output = Path(checkpoint), Path(metadata), Path(output)
     if output.exists(): raise FileExistsError('Bundle output already exists')
@@ -76,6 +88,29 @@ def build_bundle(checkpoint, metadata, output, *, include_resume=False, results=
                 'inference_weights': 'weights.pt', 'resume_checkpoint': 'resume.pt' if include_resume else None,
                 'files': {p.relative_to(output).as_posix(): file_hashes(p)
                           for p in sorted(output.rglob('*')) if p.is_file()}}
+    (output/'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True)+'\n')
+    return manifest
+
+
+def build_best_bundle(run, output):
+    """Export the crop-selected best so far, without requiring trainer completion."""
+    run, output = Path(run), Path(output)
+    manifest = build_bundle(run/'train/model.pt', run/'data', output, results=run/'train')
+    metrics = None
+    history = output/'evidence/history.jsonl'
+    if history.is_file():
+        for line in history.read_text().splitlines():
+            try: row = json.loads(line)
+            except json.JSONDecodeError: continue  # Concurrent final log write.
+            if row['epoch'] == manifest['epoch']: metrics = row.get('validation')
+    selection = {'source_checkpoint': 'train/model.pt', 'epoch': manifest['epoch'],
+                 'global_step': manifest['global_step'],
+                 'criterion': 'lowest evaluated crop-validation loss, including initialization',
+                 'validation': metrics, 'initialization_selected': manifest['epoch'] == 0,
+                 'scope': 'best saved checkpoint at snapshot time; training may continue'}
+    (output/'selection.json').write_text(json.dumps(selection, indent=2)+'\n')
+    manifest['files']['selection.json'] = file_hashes(output/'selection.json')
+    manifest['selection'] = selection
     (output/'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True)+'\n')
     return manifest
 
