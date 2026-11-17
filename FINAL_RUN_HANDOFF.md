@@ -312,6 +312,14 @@ Follow [post-run presentation instructions](docs/post-run-presentation.md).
 The generator restores the model from R2 and downloads the selected native
 4-SPP image, guides, independent layers and reference through the existing
 receipt-bound decoded loader. It runs actual inference, never image synthesis.
+The documented presentation command uses `--include-test` to include Sponza
+alongside Bathroom and Classroom after the validation-selected checkpoint is
+frozen. It records the checkpoint and evaluation protocol before reading test
+pixels and prepares separate receipt-verified test metadata. Training scenes
+are excluded; training preparation/materialization remains train+validation only.
+Use `--all-validation --include-test --all-test` for all 36 validation and 18
+Sponza test clips. Keep the two splits' metrics separate and do not tune against
+Sponza results. Omit `--include-test` for development-only validation images.
 
 For the next agent: read this file first, inspect `plan.json` and all run evidence,
 retain the 80% resource ceiling, keep artifacts outside source, preserve dataset

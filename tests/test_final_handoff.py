@@ -1,5 +1,6 @@
 """Fresh-machine R2 model round trip and reference-free native presentation."""
 import importlib.util
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -47,6 +48,167 @@ def model_bundle(decoded_cloud, tmp_path, monkeypatch):
     bundle = tmp_path/'bundle'
     build_bundle(checkpoint, metadata, bundle, include_resume=True)
     return bundle, api, metadata, checkpoint
+
+
+@pytest.fixture
+def heldout_bundle(model_bundle, decoded_cloud, source_dataset):
+    """Add real decoded held-out captures, retaining the original training locks."""
+    from wavefront_denoiser.adaptive_dataset import capture_v5
+    from wavefront_denoiser.decoded_cache import decode_frame
+    root, api = decoded_cloud
+    _, source, original, renderer, _ = source_dataset
+    descriptor = read_v5_dataset(original)
+    groups = descriptor['partitions']['test']
+    capture_v5(original, source, renderer, source.parent, groups)
+    for group in groups:
+        for category, destination in (('base', root/group), ('layers', root/'sample_layers'/group)):
+            shutil.copytree(original/category/group, destination, dirs_exist_ok=True)
+        for index in range(descriptor['groups'][group]['frame_count']):
+            decode_frame(root, group, index)
+        scene = descriptor['groups'][group]['scene']
+        key = f'dataset/r2-archives/{scene}.json'
+        receipt = json.loads(api.objects[key])
+        for directory in (root/group, root/'sample_layers'/group, root/'decoded'/group):
+            for path in directory.rglob('*'):
+                if not path.is_file() or path.suffix == '.exr': continue
+                name = path.relative_to(root).as_posix()
+                data = path.read_bytes()
+                api.objects['dataset/'+name] = data
+                receipt['files'][name] = {'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
+        api.objects[key] = json.dumps(receipt).encode()
+    return model_bundle
+
+
+@pytest.mark.parametrize('selection', ['representative', 'all', 'test_only'])
+def test_presentation_includes_heldout_only_after_checkpoint_freeze(heldout_bundle, tmp_path, monkeypatch, selection):
+    from wavefront_denoiser.r2_native import R2NativeClient
+    from wavefront_denoiser.r2_streaming import R2FrameSource, materialize_decoded_snapshot
+    bundle, api, metadata, checkpoint = heldout_bundle
+    descriptor = read_v5_dataset(metadata)
+    test_groups = descriptor['partitions']['test']
+    original_hash = hashlib.sha256((bundle/'weights.pt').read_bytes()).hexdigest()
+    output = tmp_path/'with-test'
+    download = R2NativeClient.download_file
+    def checked_download(self, key, *args, **kwargs):
+        if any('/'+g+'/' in '/'+key for g in test_groups):
+            protocol = json.loads((output/'evaluation-protocol.json').read_text())
+            assert protocol['checkpoint_sha256'] == original_hash
+            assert protocol['groups_by_partition']['test'] == test_groups
+            assert not protocol['weights_updated']
+        return download(self, key, *args, **kwargs)
+    monkeypatch.setattr(R2NativeClient, 'download_file', checked_download)
+    model, _ = load_joint_checkpoint(checkpoint)
+    step = type(model.denoiser)._step
+    def checked_step(self, guides, *args, **kwargs):
+        assert not torch.is_grad_enabled() and not self.training
+        assert 'reference' not in guides
+        return step(self, guides, *args, **kwargs)
+    monkeypatch.setattr(type(model.denoiser), '_step', checked_step)
+    api.calls.clear()
+    options = {'all_test': True, 'all_validation': True} if selection == 'all' else {}
+    if selection == 'test_only': options['groups'] = test_groups
+    report = tool('generate_presentation').generate(bundle, output, include_test=True, crop_size=3, **options)
+    assert report['test_pixels_loaded'] and not report['weights_updated']
+    assert report['groups_by_partition']['test'] == test_groups
+    assert {c['partition'] for c in report['clips']} == ({'test'} if selection == 'test_only' else {'validation', 'test'})
+    if selection == 'test_only':
+        assert report['r2']['downloaded_objects'] == 0
+    assert hashlib.sha256((bundle/'weights.pt').read_bytes()).hexdigest() == original_hash
+    verify_bundle(bundle)
+    assert not list(metadata.rglob('*.npy'))
+    assert not list((output/'spool').iterdir())
+    requested = [unquote(urlsplit(u).path) for method, u in api.calls if method == 'GET']
+    assert not any('/'+g+'/' in p for g in descriptor['partitions']['train'] for p in requested)
+    assert report['test_r2']['downloaded_objects'] == 16
+    assert api.uploads == 0
+    for clip in report['clips']:
+        assert clip['test_pixels_loaded'] == (clip['partition'] == 'test')
+        assert all(row['adaptive_paths'] == row['uniform_paths'] for row in clip['frames'])
+        assert (output/clip['group']/'comparison.gif').is_file()
+        assert (output/clip['group']/'comparison-native.png').is_file()
+    assert '(test)' in (output/'index.md').read_text()
+    with pytest.raises(ValueError, match='explicit inference-only'):
+        R2FrameSource(output/'test-metadata', 'r2://bucket/dataset', layout='decoded')
+    with pytest.raises(ValueError, match='inference-only'):
+        materialize_decoded_snapshot(output/'test-metadata')
+
+
+def test_test_presentation_requires_explicit_access_and_excludes_training(model_bundle, tmp_path):
+    bundle, api, metadata, _ = model_bundle
+    descriptor = read_v5_dataset(metadata)
+    module = tool('generate_presentation')
+    api.calls.clear()
+    with pytest.raises(ValueError, match='require --include-test'):
+        module.generate(bundle, tmp_path/'implicit-test', groups=descriptor['partitions']['test'])
+    with pytest.raises(ValueError, match='requires --include-test'):
+        module.generate(bundle, tmp_path/'all-test', all_test=True)
+    with pytest.raises(ValueError, match='unique validation'):
+        module.generate(bundle, tmp_path/'train', include_test=True, groups=descriptor['partitions']['train'])
+    assert not api.calls
+
+
+def test_incomplete_heldout_archive_fails_before_any_pixels(model_bundle, tmp_path):
+    bundle, api, _, _ = model_bundle
+    api.calls.clear()
+    with pytest.raises(ValueError, match='missing metadata'):
+        tool('generate_presentation').generate(bundle, tmp_path/'incomplete-test', include_test=True)
+    assert all(not urlsplit(u).path.endswith(('.npy', '.exr')) for _, u in api.calls)
+
+
+@pytest.mark.parametrize('problem', ['locks', 'receipt', 'overlap', 'array_hash', 'reserved_manifest'])
+def test_heldout_metadata_rejects_changed_provenance(heldout_bundle, tmp_path, problem):
+    bundle, api, metadata, checkpoint = heldout_bundle
+    descriptor = read_v5_dataset(metadata)
+    group = descriptor['partitions']['test'][0]
+    scene = descriptor['groups'][group]['scene']
+    key = f'dataset/r2-archives/{scene}.json'
+    receipt = json.loads(api.objects[key])
+    if problem == 'locks':
+        api.objects['dataset/sample_layers_lock.json'] += b'\n'
+        message = 'provenance lock changed'
+    elif problem == 'receipt':
+        receipt['capture_lock_sha256'] = 'f'*64
+        api.objects[key] = json.dumps(receipt).encode()
+        message = 'current capture lock'
+    elif problem == 'array_hash':
+        receipt['files'][f'decoded/{group}/frame_000000/float.npy']['sha256'] = 'f'*64
+        api.objects[key] = json.dumps(receipt).encode()
+        message = 'inconsistent R2 decoded array'
+    elif problem == 'reserved_manifest':
+        base_key = f'{group}/frame_000000/manifest.json'
+        data = api.objects['dataset/'+base_key] + b'\n'
+        api.objects['dataset/'+base_key] = data
+        receipt['files'][base_key] = {'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
+        cache_key = f'decoded/{group}/frame_000000/manifest.json'
+        cache = json.loads(api.objects['dataset/'+cache_key])
+        cache['source_manifest_sha256'] = hashlib.sha256(data).hexdigest()
+        data = json.dumps(cache).encode()
+        api.objects['dataset/'+cache_key] = data
+        receipt['files'][cache_key] = {'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
+        api.objects[key] = json.dumps(receipt).encode()
+        message = 'manifest changed since training snapshot'
+    else:
+        # Match another split's layer image hash while preserving all bindings.
+        train = descriptor['partitions']['train'][0]
+        train_layer = json.loads((metadata/'sample_layers'/train/'frame_000000/manifest.json').read_text())
+        layer_key = f'sample_layers/{group}/frame_000000/manifest.json'
+        value = json.loads(api.objects['dataset/'+layer_key])
+        value['image_sha256'] = train_layer['image_sha256']
+        data = json.dumps(value).encode()
+        api.objects['dataset/'+layer_key] = data
+        receipt['files'][layer_key] = {'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
+        cache_key = f'decoded/{group}/frame_000000/manifest.json'
+        cache = json.loads(api.objects['dataset/'+cache_key])
+        cache['layer_manifest_sha256'] = hashlib.sha256(data).hexdigest()
+        data = json.dumps(cache).encode()
+        api.objects['dataset/'+cache_key] = data
+        receipt['files'][cache_key] = {'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
+        api.objects[key] = json.dumps(receipt).encode()
+        message = 'identity/content crosses'
+    api.calls.clear()
+    with pytest.raises(ValueError, match=message):
+        tool('generate_presentation').generate(bundle, tmp_path/'bad-test', include_test=True)
+    assert all(not urlsplit(u).path.endswith(('.npy', '.exr')) for _, u in api.calls)
 
 
 def test_r2_roundtrip_infers_without_old_machine(model_bundle, tmp_path, monkeypatch):

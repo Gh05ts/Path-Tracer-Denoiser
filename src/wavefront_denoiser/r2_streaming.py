@@ -26,6 +26,8 @@ def materialize_decoded_snapshot(root):
     from .decoded_cache import ARRAYS, verify_decoded_frame
     root = Path(root).resolve()
     record = read_json(root/SOURCE_RECORD)
+    if record.get("purpose") == "heldout_test":
+        raise ValueError("Held-out test snapshots are inference-only; do not materialize as training data")
     if record.get("layout") != "decoded":
         raise ValueError("Local materialization requires a decoded R2 snapshot")
     source = R2FrameSource(root, record["source"], layout="decoded")
@@ -72,7 +74,7 @@ class R2FrameSource:
     This deliberately has no persistent image cache, workers or prefetch queue.
     Crop/augmentation and all training math stay in the existing dataset/trainer.
     """
-    def __init__(self, root, source, *, layout="v5", spool_directory=None):
+    def __init__(self, root, source, *, layout="v5", spool_directory=None, allow_test=False):
         self.root = Path(root)
         self.layout = layout
         if layout not in LAYOUTS:
@@ -87,7 +89,15 @@ class R2FrameSource:
             raise ValueError("R2 source/layout disagrees with prepared metadata snapshot")
         if (read_v5_dataset(self.root).get("storage") == "decoded") != (layout == "decoded"):
             raise ValueError("R2 layout disagrees with snapshot storage")
-        self.selected = set(record["selected"]["train"]+record["selected"]["validation"])
+        partitions = set(record["selected"])
+        if partitions == {"test"}:
+            if not allow_test or record.get("purpose") != "heldout_test" or layout != "decoded":
+                raise ValueError("Reserved test streaming requires explicit inference-only access")
+            if set(record['selected']['test'])-set(read_v5_dataset(self.root)['partitions']['test']):
+                raise ValueError("Held-out selection crosses partition boundaries")
+        elif partitions != {"train", "validation"}:
+            raise ValueError("Unknown R2 snapshot selections")
+        self.selected = {group for names in record["selected"].values() for group in names}
         self.stats = {"downloaded_bytes": 0, "downloaded_objects": 0, "decoded_frames": 0,
                       "decoded_cache_frames": 0,
                       "persistent_image_cache": False, "prefetch": False}
@@ -163,6 +173,23 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
     EXR archives are normalized to v5 metadata locally. Only current-lock scene
     receipts are accepted; preparation never rewrites remote objects.
     """
+    return _prepare_r2_metadata(source, output, layout=layout, train_groups=train_groups,
+                                validation_groups=validation_groups)
+
+
+def prepare_r2_test_metadata(source, output, *, groups, training_metadata, trained_inventory):
+    """Freeze held-out decoded metadata separately, after checkpoint selection.
+
+    No pixels are read. Original locks, partition membership, scene identities
+    and archive receipts must agree with the selected model's training data.
+    """
+    return _prepare_r2_metadata(source, output, layout="decoded", test_groups=groups,
+                                training_metadata=Path(training_metadata), trained_inventory=trained_inventory)
+
+
+def _prepare_r2_metadata(source, output, *, layout, train_groups=None, validation_groups=None,
+                         test_groups=None, training_metadata=None, trained_inventory=None):
+    heldout = training_metadata is not None
     if layout not in LAYOUTS:
         raise ValueError("R2 layout must be v5, inline or decoded")
     output = Path(output).resolve()
@@ -217,14 +244,25 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
                         "sample_layers": layer_layout(c, reserved)} for g,c in lock["configs"].items()}}
                 write_json(root/"dataset.json", descriptor)
                 read_v5_dataset(root)
-        selected = {p: names if names is not None else descriptor["partitions"][p]
-                    for p,names in (("train", train_groups), ("validation", validation_groups))}
+        if heldout:
+            original = read_json(training_metadata/SOURCE_RECORD)
+            if original["source"] != remote.destination or original["r2_endpoint"] != client.endpoint:
+                raise ValueError("Held-out source/endpoint differs from trained snapshot")
+            if (original["layout"] != "decoded" or descriptor["partitions"] != trained_inventory["partitions"]
+                    or any(digest(root/key) != digest(training_metadata/key) for key in DECODED_LOCKS)
+                    or digest(root/"decoded_cache_lock.json") != trained_inventory["dataset_manifest_sha256"]):
+                raise ValueError("Held-out data locks/partitions differ from trained snapshot")
+            selected = {"test": test_groups}
+        else:
+            selected = {p: names if names is not None else descriptor["partitions"][p]
+                        for p,names in (("train", train_groups), ("validation", validation_groups))}
         for partition, groups in selected.items():
-            if (not groups or len(set(groups)) != len(groups)
+            if (not isinstance(groups, list) or not groups or any(not isinstance(g, str) for g in groups)
+                    or len(set(groups)) != len(groups)
                     or set(groups)-set(descriptor["partitions"][partition])):
-                raise ValueError("R2 selections must belong to the declared train/validation partitions")
+                raise ValueError("R2 selections must belong to the declared " + "/".join(selected) + " partitions")
         receipts = {}
-        for group in selected["train"]+selected["validation"]:
+        for group in [g for names in selected.values() for g in names]:
             info = descriptor["groups"][group]
             scene = info["scene"]
             if not isinstance(scene, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", scene):
@@ -305,16 +343,25 @@ def prepare_r2_metadata(source, output, *, layout="v5", train_groups=None, valid
                         "source_manifest_sha256": digest(root/"base"/relative/"manifest.json"),
                         "layer_manifest_sha256": digest(root/"layers"/relative/"manifest.json")})
         # Audit known test identity from JSON only, including unselected scenes.
-        for group in descriptor["partitions"]["test"]:
+        for group in ([] if heldout else descriptor["partitions"]["test"]):
             for index in range(descriptor["groups"][group]["frame_count"]):
                 prefix = "base/" if layout == "v5" else ""
                 relative = f"{group}/frame_{index:06d}/manifest.json"
                 if prefix+relative in files:
                     fetch(prefix+relative, relative if layout == "decoded" else "base/"+relative)
-        inventory = joint_inventory(root, selected, verify_images=False)
+        if heldout:
+            from .evaluation_data import heldout_inventory
+            inventory = heldout_inventory(root, selected["test"], trained_inventory)
+        else:
+            inventory = joint_inventory(root, selected, verify_images=False)
         write_json(root/SOURCE_RECORD, {"source": remote.destination, "layout": layout,
             "r2_endpoint": client.endpoint, "selected": selected,
-            "inventory": inventory, "image_verification": "sha256_on_every_download"})
+            "inventory": inventory, "image_verification": "sha256_on_every_download",
+            **({"purpose": "heldout_test"} if heldout else {})})
+        if heldout:
+            root.rename(output)
+            return {"metadata_root": str(output), "source": remote.destination, "layout": layout,
+                    "selected": selected, "images_downloaded": 0}
         from .training_defaults import joint_training_config
         pilot = joint_training_config(".")
         pilot.update(epochs=1, batch_size=1, denoiser_channels=8, sampler_channels=8,
