@@ -24,7 +24,8 @@ implemented policies and remaining differences.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[train,test]'
+python -m pip install --upgrade pip 'setuptools>=64' wheel
+python -m pip install --no-build-isolation -e '.[train,test]'
 ```
 
 Source `tools/activate.sh` from this checkout to select its `.venv`, source tree
