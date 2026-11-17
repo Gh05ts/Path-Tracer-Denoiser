@@ -28,11 +28,19 @@ def training_config(path):
     root = read_json(path)
     defaults = joint_training_config()
     if (root.get("format") != defaults["format"] or type(root.get("version")) is not int or root["version"] != 1
-            or root.keys()-(defaults.keys() | {"r2_streaming", "radiance_gradient_floor", "validation_batch_size", "loader_policy",
+            or root.keys()-(defaults.keys() | {"r2_streaming", "sampler_learning_rate", "radiance_gradient_floor", "validation_batch_size", "loader_policy",
                                               "decoded_cache_frames", "prefetch_batches", "validation_every_epochs",
                                               "validation_warmup_epochs", "finite_check_policy", "checkpoint_every_epochs"})):
         raise ValueError("Invalid or unknown joint training options; use train-joint.json, not the historical plan")
     config = dict(defaults,**root)
+    if config["allocation_policy"] == "minimum_one_exact_v1":
+        # Explicit policy identity pins these run-proven stability settings.
+        config.setdefault("radiance_gradient_floor", 1e-3)
+    if "sampler_learning_rate" in config and (
+            type(config["sampler_learning_rate"]) not in (int, float)
+            or not math.isfinite(config["sampler_learning_rate"])
+            or config["sampler_learning_rate"] <= 0):
+        raise ValueError("sampler_learning_rate must be finite and positive")
     if not isinstance(config["data_root"],str) or not config["data_root"]:
         raise ValueError("Joint training needs data_root")
     config["data_root"] = str((path.parent/config["data_root"]).resolve())
@@ -84,6 +92,8 @@ def training_config(path):
         raise ValueError("Need a nonnegative seed; joint exact-resume currently requires num_workers=0")
     if type(config["learning_rate"]) not in (int,float) or not math.isfinite(config["learning_rate"]) or config["learning_rate"] <= 0:
         raise ValueError("learning_rate must be finite and positive")
+    if config["allocation_policy"] == "minimum_one_exact_v1":
+        config.setdefault("sampler_learning_rate", config["learning_rate"] / 10)
     for key in ("train_groups","validation_groups"):
         names = config[key]
         if names is not None and (not isinstance(names,list) or not names or any(not isinstance(g,str) or not g for g in names)
@@ -208,7 +218,8 @@ def _train_joint(config,output,device_name="auto",*,resume=None,frame_source=Non
             raise ValueError("Joint resume configuration, policies or dataset inventory changed")
         if payload["epoch"] >= config["epochs"]:
             raise ValueError("Joint resume needs a larger total target epoch count")
-    optimizer = joint_optimizer(model,config["learning_rate"])
+    optimizer = joint_optimizer(model,config["learning_rate"],
+                                sampler_learning_rate=config.get("sampler_learning_rate"))
     if payload is not None:
         progress = restore_joint_training(model,optimizer,payload,generator=generator)
         epoch0,global_step = progress["epoch"],progress["global_step"]

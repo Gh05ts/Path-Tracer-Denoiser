@@ -8,7 +8,7 @@ from .adaptive import SampleMap, normalize_sample_map
 from .sample_layers import MAX_SPP
 
 
-POLICIES = ("paper_softmax_v1", "capped_softmax_v1")
+POLICIES = ("paper_softmax_v1", "capped_softmax_v1", "minimum_one_exact_v1")
 
 
 def allocate_samples(logits: torch.Tensor, average_spp: float, *, policy: str, max_spp: int = MAX_SPP) -> SampleMap:
@@ -18,6 +18,10 @@ def allocate_samples(logits: torch.Tensor, average_spp: float, *, policy: str, m
     capped_softmax_v1 redistributes overflow proportionally among free pixels:
     y_i=min(max_spp, lambda*exp(logit_i)), sum_i y_i=H*W*average_spp.
     This bounded policy is an engineering variant, not the published equation.
+
+    minimum_one_exact_v1 reserves one path per pixel and distributes the rest
+    with capped softmax, then uses stable largest-remainder integer rounding.
+    This is the dense collapse-prevention policy from the development runs.
 
     The active-set softmax stays stable even for very large finite logits.
     Ordinary autograd differentiates the final free-pixel softmax; saturated
@@ -34,6 +38,16 @@ def allocate_samples(logits: torch.Tensor, average_spp: float, *, policy: str, m
     if (logits.ndim != 4 or logits.shape[1] != 1 or min(logits.shape) < 1
             or not logits.is_floating_point() or not torch.isfinite(logits).all()):
         raise ValueError("logits must be finite floating N1HW")
+    if policy == "minimum_one_exact_v1":
+        if type(average_spp) is not int or average_spp < 1:
+            raise ValueError("Minimum-one allocation requires integer average_spp >= 1")
+        if average_spp == 1:
+            expected = logits * 0 + 1
+        else:
+            free = allocate_samples(logits, average_spp-1,
+                                    policy="capped_softmax_v1", max_spp=max_spp-1)
+            expected = free.expected + 1
+        return SampleMap(expected, exact_counts(expected, average_spp, maximum=max_spp))
     if policy == "paper_softmax_v1":
         result = normalize_sample_map(logits,average_spp)
         if (result.counts > max_spp).any():
@@ -60,3 +74,39 @@ def allocate_samples(logits: torch.Tensor, average_spp: float, *, policy: str, m
         else:
             raise RuntimeError("Bounded allocation failed to converge")
     return SampleMap(expected,expected.round().to(torch.int64))
+
+
+@torch.no_grad()
+def exact_counts(expected, average_spp, *, minimum=1, maximum=63):
+    """Largest fractional remainder, stable flat-index ties, exact image sum.
+
+    Typical allocations need additions to floor(expected). A defensive removal
+    branch handles floating-point budget overshoot. This does not differentiate
+    the discrete allocation or claim the published independent rounding rule.
+    """
+    if (expected.ndim != 4 or expected.shape[1] != 1 or min(expected.shape) < 1
+            or not expected.is_floating_point() or not torch.isfinite(expected).all()):
+        raise ValueError("Expected finite floating N1HW allocations")
+    if not (type(average_spp) is int and type(minimum) is int and type(maximum) is int
+            and 0 <= minimum <= average_spp <= maximum):
+        raise ValueError("Invalid integer budget or bounds")
+    if (expected < minimum-1e-5).any() or (expected > maximum+1e-5).any():
+        raise ValueError("Expected allocations outside declared bounds")
+    values = expected.detach().flatten(1).double().clamp(minimum, maximum)
+    floors = values.floor()
+    counts = floors.long()
+    target = average_spp*values.shape[1]
+    for row in range(values.shape[0]):
+        difference = target-int(counts[row].sum())
+        if not difference:
+            continue
+        fractions = values[row]-floors[row]
+        eligible = counts[row] < maximum if difference > 0 else counts[row] > minimum
+        if abs(difference) > int(eligible.sum()):
+            raise ValueError("Expected map is incompatible with a one-sample remainder repair")
+        scores = fractions if difference > 0 else -fractions
+        order = torch.argsort(scores.masked_fill(~eligible, -torch.inf), descending=True, stable=True)
+        counts[row, order[:abs(difference)]] += 1 if difference > 0 else -1
+    if not torch.all(counts.sum(1) == target):
+        raise RuntimeError("Integer budget repair failed")
+    return counts.reshape_as(expected)
