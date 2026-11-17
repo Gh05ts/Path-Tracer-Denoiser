@@ -40,8 +40,13 @@ def checkpoint_spec(payload):
     return dict(spec,reconstruction_version="sample_mass_v1") if legacy else dict(spec)
 
 
-def joint_optimizer(model: JointNTASAD, learning_rate=.001):
-    return torch.optim.Adam([{"params":model.sampler.parameters(),"name":"sampler"},
+def joint_optimizer(model: JointNTASAD, learning_rate=.001, *, sampler_learning_rate=None):
+    if sampler_learning_rate is None:
+        sampler_learning_rate = learning_rate
+    if (type(sampler_learning_rate) not in (int, float)
+            or not math.isfinite(sampler_learning_rate) or sampler_learning_rate <= 0):
+        raise ValueError("sampler_learning_rate must be finite and positive")
+    return torch.optim.Adam([{"params":model.sampler.parameters(),"name":"sampler", "lr":sampler_learning_rate},
                              {"params":model.denoiser.parameters(),"name":"denoiser"}],lr=learning_rate)
 
 

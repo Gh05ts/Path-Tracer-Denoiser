@@ -49,12 +49,17 @@ class DifferentiableRender:
 
 
 def differentiable_replay(layers: torch.Tensor, expected: torch.Tensor,
-                          reference: torch.Tensor, *, zero_policy: str) -> DifferentiableRender:
+                          reference: torch.Tensor, *, zero_policy: str,
+                          counts: torch.Tensor | None = None) -> DifferentiableRender:
     """Replay rounded expected allocations and attach the DASR count surrogate.
 
     layers: N,6,3,H,W independent linear RGB means, ordered 1/2/4/8/16/32.
     expected: differentiable floating N1HW allocations BEFORE rounding.
     reference: independent linear N3HW target, used only by backward.
+
+    counts optionally supplies the allocator's exact-budget integer result;
+    the same counts drive both replay and the DASR denominator. Otherwise counts
+    use historical independent rounding. Rounding remains nondifferentiable.
 
     Rounded counts must be in 0..63; no cap, floor-to-one or budget repair is
     silently added. The caller must choose a zero policy explicitly, since the
@@ -73,7 +78,11 @@ def differentiable_replay(layers: torch.Tensor, expected: torch.Tensor,
             or not expected.is_floating_point() or not torch.isfinite(expected).all()
             or (expected < 0).any()):
         raise ValueError("expected must be finite nonnegative floating N1HW")
-    counts = expected.round().to(torch.int64)
+    if counts is None:
+        counts = expected.round().to(torch.int64)
+    elif (counts.shape != expected.shape or counts.dtype != torch.int64
+            or counts.device != expected.device):
+        raise ValueError("Counts must be int64 matching expected allocations and device")
     image = replay_sample_layers(layers, counts)
     if expected.device != image.device or expected.dtype != image.dtype:
         raise ValueError("Expected allocations must match replay output device and floating dtype")

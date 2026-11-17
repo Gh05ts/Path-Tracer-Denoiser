@@ -90,7 +90,7 @@ class JointNTASAD(nn.Module):
                     current = replay_sample_layers(layers[:,index],count)
                 else:
                     render = differentiable_replay(layers[:,index],expectation,training_reference[:,index],
-                                                   zero_policy=self.zero_policy)
+                                                   zero_policy=self.zero_policy, counts=count)
                     current = render.radiance
             frame = dict(frame,radiance=current,sample_count=count)
             state = self.denoiser._step(frame,state)
