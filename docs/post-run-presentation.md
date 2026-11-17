@@ -184,7 +184,11 @@ qualification. BMW base/layer integrator compatibility remains a dataset caveat.
 
 The primary spatial average covers frames 1 onward; the temporal average covers
 pairs 1→2 onward. Seed-frame and 0→1 diagnostics remain in per-frame metrics.
-These are encoded-domain L1 diagnostics, not paper PSNR. Compare adaptive against
+The L1 values remain encoded-domain diagnostics. New outputs also include
+tone-mapped PSNR/tPSNR, per-frame and per-clip CSVs, crop scores and an explicit
+metric protocol; see [quality metric definitions](../RTX3090_INFERENCE.md#5-psnr-temporal-psnr-and-diagnostic-errors).
+These scores use the preview's documented display transform rather than claiming
+an exact reproduction of the paper's evaluation pipeline. Compare adaptive against
 uniform+same-denoiser at **equal actual integer paths**, show per-scene/per-clip
 results and unavailable-output rates, and retain negative results. Offline replay
 quality does not establish live adaptive renderer speed or paper-equivalent

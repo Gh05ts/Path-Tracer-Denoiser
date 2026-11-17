@@ -151,8 +151,11 @@ Inspect identical native crops of disocclusions, specular regions and penumbras
 where present; choose coordinates before comparing candidate improvements and
 use them for every candidate. The [presentation guide](post-run-presentation.md)
 documents `--crops`, fixed exposure, full controls, EXR export and GIF limits.
-The current metrics are full-frame/clip metrics; crop images do not automatically
-produce semantic-region scores. Do not infer an aggregate win from selected crops.
+Full-frame/clip metrics and final-frame crop metrics are reported separately.
+New presentation outputs include PSNR/tPSNR and MSE/RMSE in each crop's
+`metrics.json`; these use the fixed crop coordinates and final adjacent frame
+pair, not a semantic-region classification or a full cropped-clip average.
+Do not infer an aggregate win from selected crops.
 
 The uniform inference control uses **the same jointly trained denoiser** with
 independent recurrent history and uniform 4-SPP inputs. It measures allocation

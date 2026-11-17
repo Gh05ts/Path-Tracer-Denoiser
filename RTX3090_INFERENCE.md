@@ -62,6 +62,34 @@ to `export-best` to export and upload in one invocation. Repeat with a **new**
 snapshot ID when you want newer weights. Existing differing remote objects are
 rejected; retry an interrupted upload with the same local bundle and URI.
 
+### Export a later best checkpoint
+
+You can repeat `export-best` at any point during training or after it finishes.
+The tool reads the **current** best checkpoint each time; it is not pinned to
+the first exported epoch. If validation improves, the trainer replaces
+`train/model.pt` and the next export captures that later best. If it does not
+improve, the selected epoch stays the same even though training advances.
+Only evaluated validation improvements select a new best; a lower training
+batch loss alone does not replace it.
+
+Use a new timestamp, local directory and R2 URI to preserve previous snapshots:
+
+```bash
+export SNAPSHOT_ID="final-01-preview-$(date -u +%Y%m%dT%H%M%SZ)"
+export EXPORT_DIR="$HOME/denoiser-exports/$SNAPSHOT_ID"
+python tools/model_r2.py export-best \
+  --run "$FINAL_ROOT" --output "$EXPORT_DIR" \
+  --destination "r2://denoiser/model-runs/$SNAPSHOT_ID"
+cat "$EXPORT_DIR/selection.json"
+```
+
+On the 3090, set `MODEL_URI` to this new URI and choose new download, preview
+and log names. An already downloaded model is a fixed snapshot; reusing its
+`--bundle` path will continue using its original weights. Check the recorded
+epoch and checkpoint hash when comparing runs. Checkpoint selection still uses
+the trainer's crop-validation loss; generating PSNR/tPSNR does not change which
+checkpoint the trainer considers best.
+
 If you prefer direct transfer, copy the entire exported bundle to the 3090
 with `scp -r` or a downloaded archive and use `--bundle /path/to/unpacked/bundle`
 instead of `--model-r2`. This bypasses model upload/download; the 3090 still
@@ -178,6 +206,8 @@ denoiser-inference/
     index.md                scene comparisons and links
     preview.json            completion, epoch, checkpoint hash, timing and directories
     presentation.json       per-clip evidence; explicitly labelled visual_preview
+    metric-protocol.json    exact score definitions, exposure and frame/pair rules
+    quality-summary.csv     per-clip/method PSNR, tPSNR, MSE and RMSE
     evaluation-protocol.json
     CLIP_ID/
       comparison-native.png
@@ -190,6 +220,7 @@ denoiser-inference/
       frame_000000/...      five method PNGs, raw counts and both allocation maps
       crop_01/...           matching method/map crops, raw counts and 3x displays
       metrics.json
+      quality-frames.csv    per-frame/method scores, including initialization diagnostics
   logs/bathroom-001.log
 ```
 
@@ -230,3 +261,54 @@ Preview PNGs, maps, GIFs and reports remain usable without downloads. Retain
 the R2 URI and reports to reproduce the snapshot. Rotate preview directories
 separately after copying the chosen presentation assets. No command
 automatically deletes old models, training state or preview outputs.
+
+## 5. PSNR, temporal PSNR and diagnostic errors
+
+The [NTASAD paper, section 3 and Figures 7/9](https://research.nvidia.com/sites/default/files/pubs/2020-05_Neural-Temporal-Adaptive/NTASAD_preprint.pdf)
+reports PSNR and temporal PSNR (tPSNR) on tone-mapped images. Both are generated
+automatically with every new preview; no extra option or dependency is needed.
+
+| Output | Contents |
+| --- | --- |
+| `index.md` | PSNR/tPSNR table for each scene and all four comparison methods |
+| `quality-summary.csv` | One row per clip/method, with epoch, hash, partition, exposure, contributing frame/pair counts and scores |
+| `CLIP_ID/quality-frames.csv` | PSNR/tPSNR and diagnostic MSE/RMSE for each frame and method |
+| `CLIP_ID/metrics.json` | Per-frame metrics, clip summaries, allocation and existing encoded L1 diagnostics |
+| `CLIP_ID/crop_XX/metrics.json` | Final-frame crop scores and the final adjacent temporal pair at the same fixed crop coordinates |
+| `metric-protocol.json` | Versioned numerical convention, also embedded in JSON reports |
+
+The four methods are uniform noisy 4 SPP, adaptive noisy input, uniform plus
+the same trained denoiser, and adaptive plus denoiser. References are used to
+measure errors only. They never enter network prediction.
+
+Let `T(x) = (exposure*x/(1+exposure*x))**(1/2.2)`. This is the preview's existing
+shared per-channel display transform, computed as float64 before 8-bit PNG or
+GIF quantization. With `e[t] = T(pred[t]) - T(ref[t])`:
+
+- `mse = mean(e[t]**2)` and `psnr_db = -10*log10(mse)`.
+- `temporal_mse = mean((e[t]-e[t-1])**2)` and
+  `tpsnr_db = -10*log10(temporal_mse)`.
+- RMSE values are the square roots of their corresponding MSEs. RGB channels
+  and pixels have equal weight; the peak is fixed at 1. Temporal differences
+  stay signed, with no motion warp, absolute-value transform or clipping.
+
+Clip summaries include spatial frames 1 onward and temporal pairs 1→2 onward.
+Frame 0 and pair 0→1 remain visible as per-frame initialization diagnostics.
+For an eight-frame clip, the summary contains seven spatial frames and six
+temporal pairs. Aggregate MSE first, then convert it to dB; this is not the
+arithmetic mean of frame PSNR values. Validation and test clips remain separate
+rows; the tool does not pool them into one scene-selection score.
+
+An exactly zero error has mathematically infinite PSNR: JSON records `mse: 0`,
+`exact_match: true` and `psnr_db: null`, and the Markdown table shows `+inf (exact)`.
+The temporal fields use the same convention. A missing temporal history has
+both temporal MSE and the exact-match flag set to `null`. Empty CSV dB cells
+therefore need to be read alongside the MSE and exact-match flag.
+
+These use the paper's metric definitions with this explicitly documented
+display transform, reference captures and short preview clips. The full
+paper evaluation pipeline is not reproduced, so scores should not be treated
+as directly comparable to its published numbers. Use the same exposure,
+clips and crop boxes to compare your snapshots. Existing PNG/GIF-only previews
+need to be rerun to get unquantized scores from their original weights/data;
+the tool does not estimate metrics from quantized presentation images.
