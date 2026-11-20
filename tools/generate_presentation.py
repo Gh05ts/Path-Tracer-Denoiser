@@ -247,7 +247,7 @@ def infer_clip(model, source, descriptor, group, output, *, device='cpu', exposu
 
 def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=None,
              crop_size=160, fps=6., hdr=False, all_validation=False, include_test=False, all_test=False,
-             scenes=None, download_directory=None, preview=False):
+             scenes=None, download_directory=None, preview=False, kernel_chunk_rows=0):
     started = time.perf_counter()
     bundle, output = Path(bundle), Path(output)
     if output.exists(): raise FileExistsError('Presentation output already exists')
@@ -259,8 +259,11 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
         raise ValueError('Invalid exposure, FPS or crop size')
     if all_test and not include_test:
         raise ValueError('--all-test requires --include-test after checkpoint selection')
+    if type(kernel_chunk_rows) is not int or kernel_chunk_rows < 0:
+        raise ValueError('kernel_chunk_rows must be a nonnegative integer')
     verify_bundle(bundle)
     model, payload = load_joint_checkpoint(bundle/'weights.pt', torch.device(device))
+    model.denoiser.kernel_chunk_rows = kernel_chunk_rows
     if model.average_spp != 4 or model.allocation_policy != 'minimum_one_exact_v1':
         raise ValueError('Presentation requires the final exact-budget 4-SPP model policy')
     metadata = bundle/'metadata'
@@ -314,7 +317,8 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
                 'selection': selection_rule, 'dataset_source': record['source'],
                 'dataset_manifest_sha256': expected['dataset_manifest_sha256'],
                 'exposure': exposure, 'crops': crop_spec, 'crop_size': crop_size, 'fps': fps, 'hdr': hdr,
-                'weights_updated': False, 'test_used_for_checkpoint_selection': False}
+                'weights_updated': False, 'test_used_for_checkpoint_selection': False,
+                'kernel_chunk_rows': kernel_chunk_rows}
     protocol.update(purpose='visual_preview' if preview else 'presentation', scenes=scenes)
     protocol['metric_protocol'] = metric_protocol(exposure)
     write_json(output/'evaluation-protocol.json', protocol)
@@ -340,7 +344,8 @@ def generate(bundle, output, *, groups=None, device='cpu', exposure=1., crops=No
               'groups_by_partition': groups_by_partition, 'checkpoint_sha256': checkpoint_sha256,
               'epoch': payload['epoch'], 'model_spec': model.specification(), 'r2': source.stats,
               'test_r2': test_source.stats if test_source else None,
-              'clips': results, 'complete': True, 'test_pixels_loaded': bool(test_groups), 'weights_updated': False}
+              'clips': results, 'complete': True, 'test_pixels_loaded': bool(test_groups), 'weights_updated': False,
+              'kernel_chunk_rows': kernel_chunk_rows}
     report.update(purpose=protocol['purpose'], scenes=scenes, elapsed_seconds=time.perf_counter()-started,
                   peak_gpu_allocated_bytes=(torch.cuda.max_memory_allocated(device)
                                             if torch.device(device).type == 'cuda' else None))
@@ -388,13 +393,16 @@ def main():
     p.add_argument('--device', default='cuda'); p.add_argument('--exposure', type=float, default=1.)
     p.add_argument('--crops', type=Path); p.add_argument('--crop-size', type=int, default=160)
     p.add_argument('--fps', type=float, default=6.); p.add_argument('--hdr', action='store_true')
+    p.add_argument('--kernel-chunk-rows', type=int, default=0,
+                   help='Filter in strips to reduce inference memory; try 64 on a 3090 (0: whole frame)')
     a = p.parse_args()
+    if a.kernel_chunk_rows < 0: p.error('--kernel-chunk-rows must be nonnegative')
     if a.model_r2:
         a.bundle = a.output.parent/(a.output.name+'-model')
         download_bundle(a.model_r2, a.bundle)
     generate(a.bundle, a.output, groups=a.groups, device=a.device, exposure=a.exposure, crops=a.crops,
              crop_size=a.crop_size, fps=a.fps, hdr=a.hdr, all_validation=a.all_validation,
-             include_test=a.include_test, all_test=a.all_test)
+             include_test=a.include_test, all_test=a.all_test, kernel_chunk_rows=a.kernel_chunk_rows)
 
 
 if __name__ == '__main__': main()

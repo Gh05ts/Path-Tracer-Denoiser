@@ -101,12 +101,14 @@ def reproject_available_history(history: torch.Tensor, motion: torch.Tensor,
 
 
 def apply_kernel(image: torch.Tensor, logits: torch.Tensor, *,
-                 valid: torch.Tensor | None = None) -> torch.Tensor:
+                 valid: torch.Tensor | None = None, chunk_rows: int = 0) -> torch.Tensor:
     """Apply per-pixel normalized kernels, excluding borders and invalid taps.
 
     Logits have N x K² x H x W shape in row-major offset order. The default
     NTASAD kernel is 5x5. All-invalid neighborhoods return zero. This unfold
     reference implementation prioritizes correctness over full-resolution speed.
+    Positive chunk_rows bounds inference temporaries to strips plus a kernel
+    halo. Filtering still uses the original neighbors across strip boundaries.
     """
     if image.ndim != 4 or logits.ndim != 4 or min(image.shape) < 1:
         raise ValueError("Expected nonempty NCHW image and kernel logits")
@@ -122,6 +124,18 @@ def apply_kernel(image: torch.Tensor, logits: torch.Tensor, *,
         raise ValueError("valid must have matching N1HW shape and device")
     if not torch.all((valid == 0) | (valid == 1)):
         raise ValueError("valid must be binary")
+    if type(chunk_rows) is not int or chunk_rows < 0:
+        raise ValueError("chunk_rows must be a nonnegative integer")
+    if chunk_rows and chunk_rows < h:
+        strips = []
+        radius = k // 2
+        for start in range(0, h, chunk_rows):
+            end = min(h, start + chunk_rows)
+            top, bottom = max(0, start-radius), min(h, end+radius)
+            filtered = apply_kernel(image[..., top:bottom, :], logits[..., top:bottom, :],
+                                    valid=valid[..., top:bottom, :])
+            strips.append(filtered[..., start-top:end-top, :])
+        return torch.cat(strips, dim=2)
     taps = F.unfold(valid.to(image.dtype), k, padding=k//2).reshape(n, k*k, h, w) > 0
     any_valid = taps.any(dim=1, keepdim=True)
     masked = logits.masked_fill(~taps, -torch.inf)

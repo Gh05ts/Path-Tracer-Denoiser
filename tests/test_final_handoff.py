@@ -147,6 +147,45 @@ def test_test_presentation_requires_explicit_access_and_excludes_training(model_
     assert not api.calls
 
 
+def test_striped_presentation_matches_whole_frame(model_bundle, tmp_path, monkeypatch):
+    from wavefront_denoiser import adaptive_model
+    bundle, _, _, _ = model_bundle
+    module = tool('generate_presentation')
+    original = adaptive_model.apply_kernel
+    seen = []
+    def checked_kernel(*args, **kwargs):
+        seen.append(kwargs.get('chunk_rows', 0))
+        return original(*args, **kwargs)
+    monkeypatch.setattr(adaptive_model, 'apply_kernel', checked_kernel)
+    whole = tmp_path/'whole'
+    expected = module.generate(bundle, whole, crop_size=3)
+    seen.clear()
+    striped = tmp_path/'striped'
+    actual = module.generate(bundle, striped, crop_size=3, kernel_chunk_rows=2)
+    assert seen and set(seen) == {2}
+    def compare(a, b):
+        if isinstance(b, dict):
+            assert a.keys() == b.keys()
+            for key in b:
+                if key not in ('timing', 'elapsed_seconds'):
+                    compare(a[key], b[key])
+        elif isinstance(b, list):
+            assert len(a) == len(b)
+            for x, y in zip(a, b): compare(x, y)
+        elif isinstance(b, float):
+            assert a == pytest.approx(b, rel=1e-5, abs=1e-6)
+        else:
+            assert a == b
+    compare(actual['clips'], expected['clips'])
+    assert actual['kernel_chunk_rows'] == 2
+    assert json.loads((striped/'evaluation-protocol.json').read_text())['kernel_chunk_rows'] == 2
+    for path in whole.rglob('*.png'):
+        np.testing.assert_array_equal(np.asarray(Image.open(path)),
+                                      np.asarray(Image.open(striped/path.relative_to(whole))))
+    for path in whole.rglob('sample-count.npy'):
+        np.testing.assert_array_equal(np.load(path), np.load(striped/path.relative_to(whole)))
+
+
 def test_incomplete_heldout_archive_fails_before_any_pixels(model_bundle, tmp_path):
     bundle, api, _, _ = model_bundle
     api.calls.clear()

@@ -148,6 +148,12 @@ are retained in `metrics.json`, `presentation.json` and `preview.json`.
 These are offline replay timings, not live renderer FPS. `--fps` only controls
 GIF playback. No RTX 3090 benchmark has been established yet.
 
+Add `--kernel-chunk-rows 64` to the preview arguments to reduce filtering
+temporaries while retaining native resolution, the global allocation budget
+and recurrent history. The default `0` filters whole frames. The U-Net still
+runs on full frames, so this does not guarantee that a particular resolution
+fits the 3090's memory budget.
+
 `--scenes` accepts one or more of:
 
 | Argument | Preview selection |
