@@ -84,3 +84,34 @@ def test_invalid_inputs_rejected(device):
         reproject_history(image, torch.zeros(1, 2, 2, 2, device=device), torch.full((1, 1, 2, 2), .5, device=device))
     with pytest.raises(ValueError, match="2:1"):
         combine_scales(image, image, torch.zeros(1, 1, 2, 2, device=device))
+
+
+@pytest.mark.parametrize('chunk_rows', [1, 3, 64])
+@pytest.mark.parametrize('kernel_size', [1, 3, 5])
+def test_striped_kernel_matches_whole_frame_and_bounds_unfold(device, monkeypatch, chunk_rows, kernel_size):
+    torch.manual_seed(73)
+    image = torch.rand(2, 3, 13, 7, device=device, dtype=torch.double, requires_grad=True)
+    logits = torch.randn(2, kernel_size**2, 13, 7, device=device, dtype=torch.double, requires_grad=True)
+    valid = torch.rand(2, 1, 13, 7, device=device) > .3
+    valid[..., 3:10, :] = False  # Includes entirely unsupported neighborhoods.
+    expected = apply_kernel(image, logits, valid=valid)
+    unfold = torch.nn.functional.unfold
+    heights = []
+    def checked_unfold(value, *args, **kwargs):
+        heights.append(value.shape[-2])
+        return unfold(value, *args, **kwargs)
+    monkeypatch.setattr(torch.nn.functional, 'unfold', checked_unfold)
+    actual = apply_kernel(image, logits, valid=valid, chunk_rows=chunk_rows)
+    assert max(heights) <= min(13, chunk_rows + kernel_size - 1)
+    torch.testing.assert_close(actual, expected, rtol=1e-12, atol=1e-12)
+    expected_grad = torch.autograd.grad(expected.square().sum(), (image, logits))
+    actual_grad = torch.autograd.grad(actual.square().sum(), (image, logits))
+    for a, b in zip(actual_grad, expected_grad):
+        torch.testing.assert_close(a, b, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize('chunk_rows', [-1, True, 1.5])
+def test_invalid_kernel_chunk_size_rejected(chunk_rows, device):
+    with pytest.raises(ValueError, match='nonnegative integer'):
+        apply_kernel(torch.ones(1, 3, 2, 2, device=device),
+                     torch.zeros(1, 25, 2, 2, device=device), chunk_rows=chunk_rows)

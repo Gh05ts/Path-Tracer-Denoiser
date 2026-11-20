@@ -46,8 +46,8 @@ def _weighted_downsample(image: torch.Tensor, weight: torch.Tensor) -> tuple[tor
     return numerator / safe, mass
 
 
-def _filtered(image, logits, valid):
-    value = apply_kernel(image, logits, valid=valid)
+def _filtered(image, logits, valid, *, chunk_rows=0):
+    value = apply_kernel(image, logits, valid=valid, chunk_rows=chunk_rows)
     support = F.max_pool2d(valid.to(image.dtype), 5, stride=1, padding=2) > 0
     return value, support
 
@@ -87,6 +87,8 @@ class AdaptiveNTASADDenoiser(nn.Module):
             raise ValueError("Unknown adaptive history backend")
         self.history_backend = history_backend
         self.reconstruction_version = reconstruction_version
+        # Runtime inference option; does not alter checkpoint architecture/weights.
+        self.kernel_chunk_rows = 0
 
     @property
     def architecture(self):
@@ -152,15 +154,16 @@ class AdaptiveNTASADDenoiser(nn.Module):
         mass0 = F.pad(weight.to(rgb.dtype), pad, mode="replicate")
         image1, mass1 = _weighted_downsample(image0, mass0)
         image2, mass2 = _weighted_downsample(image1, mass1)
-        filtered2, support2 = _filtered(image2, coarse[:, :25], mass2 > 0)
-        filtered1, support1 = _filtered(image1, middle[:, :25], mass1 > 0)
+        filtered2, support2 = _filtered(image2, coarse[:, :25], mass2 > 0, chunk_rows=self.kernel_chunk_rows)
+        filtered1, support1 = _filtered(image1, middle[:, :25], mass1 > 0, chunk_rows=self.kernel_chunk_rows)
         filtered1, support1 = _combine(filtered1, support1, filtered2, support2,
             F.interpolate(coarse[:, 25:], scale_factor=2, mode="nearest"))
-        spatial, support0 = _filtered(image0, fine[:, :25], mass0 > 0)
+        spatial, support0 = _filtered(image0, fine[:, :25], mass0 > 0, chunk_rows=self.kernel_chunk_rows)
         spatial, support0 = _combine(spatial, support0, filtered1, support1,
             F.interpolate(middle[:, 25:], scale_factor=2, mode="nearest"))
         spatial, support0 = spatial[..., :h, :w], support0[..., :h, :w]
-        temporal = apply_kernel(warped, fine[:, 25:50, :h, :w], valid=valid)
+        temporal = apply_kernel(warped, fine[:, 25:50, :h, :w], valid=valid,
+                                chunk_rows=self.kernel_chunk_rows)
         alpha = torch.sigmoid(fine[:, 50:, :h, :w]) * valid.to(rgb.dtype)
         both = (1-alpha) * spatial + alpha * temporal
         result = torch.where(support0, both, torch.where(valid, temporal, 0))

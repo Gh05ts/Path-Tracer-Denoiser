@@ -13,7 +13,7 @@ from wavefront_denoiser.model_artifacts import download_bundle
 
 
 def preview(*, output, download_dir, scenes, model_r2=None, bundle=None, device='cuda',
-            exposure=1., crops=None, crop_size=160, fps=6., hdr=False):
+            exposure=1., crops=None, crop_size=160, fps=6., hdr=False, kernel_chunk_rows=0):
     if bool(model_r2) == bool(bundle): raise ValueError('Choose exactly one of model_r2 or bundle')
     output, download_dir = Path(output), Path(download_dir)
     separate_directories(output, download_dir, *([bundle] if bundle else []))
@@ -30,7 +30,7 @@ def preview(*, output, download_dir, scenes, model_r2=None, bundle=None, device=
         download_bundle(model_r2, bundle)
     report = generate(bundle, output, scenes=scenes, device=device, exposure=exposure,
                       crops=crops, crop_size=crop_size, fps=fps, hdr=hdr,
-                      download_directory=download_dir/'work', preview=True)
+                      download_directory=download_dir/'work', preview=True, kernel_chunk_rows=kernel_chunk_rows)
     summary = {'complete': True, 'purpose': 'visual_preview', 'scenes': scenes,
                'epoch': report['epoch'], 'checkpoint_sha256': report['checkpoint_sha256'],
                'bundle': str(Path(bundle).resolve()), 'downloads': str(download_dir.resolve()),
@@ -60,6 +60,8 @@ def main(argv=None):
     parser.add_argument('--crop-size', type=int, default=160)
     parser.add_argument('--fps', type=float, default=6.)
     parser.add_argument('--hdr', action='store_true', help='Also retain final-frame EXR images')
+    parser.add_argument('--kernel-chunk-rows', type=int, default=0,
+                        help='Filter in strips to reduce inference memory; try 64 (0: whole frame)')
     args = parser.parse_args(argv)
     print(json.dumps(preview(**vars(args)), indent=2))
 

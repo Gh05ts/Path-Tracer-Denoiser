@@ -204,11 +204,12 @@ def test_preview_cli_downloads_and_runs_selected_clip(model_bundle, tmp_path, mo
     output, downloads = tmp_path/'retained', tmp_path/'disposable'
     tool('preview_inference').main(['--model-r2', 'r2://bucket/model-runs/preview',
         '--download-dir', str(downloads), '--output', str(output),
-        '--scenes', 'validation_scene', '--device', 'cpu', '--crop-size', '3'])
+        '--scenes', 'validation_scene', '--device', 'cpu', '--crop-size', '3', '--kernel-chunk-rows', '2'])
     summary = json.loads((output/'preview.json').read_text())
     assert summary['complete'] and summary['epoch'] == 3
     report = json.loads((output/'presentation.json').read_text())
     assert len(report['clips']) == 1 and not report['test_pixels_loaded']
+    assert report['kernel_chunk_rows'] == 2
     assert (downloads/'model/weights.pt').is_file()
     assert not list((downloads/'work/spool').iterdir())
     assert (output/'index.md').is_file()

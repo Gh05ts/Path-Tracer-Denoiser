@@ -15,6 +15,38 @@ Complete the handoff's editable-install/import check first; the `(.venv)` prompt
 alone does not establish that `wavefront_denoiser` is installed.
 No paths or pixels from the training machine are needed for inference.
 
+## Generate and upload the representative presentation
+
+On the final training machine, this launcher runs the two presentation steps
+below sequentially and uploads a recovery archive:
+
+```bash
+bash tools/launch_post_run_presentation.sh
+```
+
+It privately prompts for missing R2 credentials, requires read/write access,
+and detaches the work so an SSH disconnect does not stop it. It prints a launcher
+log to monitor. The default identity is `final-01-presentation-01`; use
+`--name final-01-presentation-02` for a fresh attempt after an interrupted render.
+The default filtering strip size is 64 rows, with a two-hour guard per step.
+This produces the representative three clips, not full-split evaluation.
+
+Outputs go under `$QUALITY_RUN_ROOT/final-01-presentation-01/`, with separate
+`validation/index.md` and `sponza/index.md`. The archive also retains restored
+model weights, exact inference source, rendering provenance and both original
+and resumed training logs when available. The launcher verifies completion,
+checkpoint identity and path budgets, uploads `presentation.tar.gz` and
+`manifest.json` to `r2://denoiser/presentation-runs/final-01-presentation-01`,
+then downloads both objects to verify SHA-256. Success is recorded in
+`$QUALITY_RUN_ROOT/final-01-presentation-01-upload/upload-receipt.json` with
+`verified: true` and `remote_readback_sha256_verified: true`.
+If only packaging or upload failed after both rendering steps completed, rerun
+the same launcher/name to reuse those completed outputs. Partial rendering
+outputs are preserved and require a new name. Keep the machine running until
+the upload receipt confirms completion.
+
+## Run the two rendering steps individually
+
 ```bash
 python tools/run_with_memory_guard.py --hours 2 \
   --log "$QUALITY_RUN_ROOT/slides-01.log" --script tools/generate_presentation.py \
@@ -68,6 +100,23 @@ All eight frames (or the recorded clip length) are
 processed in order; frame zero initializes independent uniform/adaptive histories.
 Full images determine allocation and history; exported crops are taken **after
 native inference**, so a crop never changes the sampler's global budget.
+
+For GPUs with less memory, add `--kernel-chunk-rows 64` to the generator's
+arguments (after the guard's `--`). This processes spatial and temporal kernel
+filtering in strips with overlapping neighbor rows. Full-resolution inputs,
+global allocation, floating-point precision and recurrent history are retained.
+Use `32` or `16` for smaller filtering temporaries; `0` is the default whole-frame
+path. This reduces filtering memory, but the U-Net still runs on whole frames,
+so fitting a particular resolution on an RTX 3090 is not guaranteed. Changing
+`--crop-size` only changes exported crops and does not reduce inference memory.
+
+If the guard reports `reason: completed` with a nonzero exit code, read its
+`--log` file for the actual exception. CUDA allocation failures can occur below
+the guard's sampled stop threshold because the worker also has an allocator
+budget. Strip filtering can help a filtering allocation failure; missing files,
+unsupported arguments and import errors need their own fixes. If necessary,
+run on CPU with `--cpu` on the guard and `--device cpu` on the generator, allowing
+for the host memory requirement and longer runtime.
 
 Every clip directory contains:
 
