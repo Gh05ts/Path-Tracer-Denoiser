@@ -13,9 +13,13 @@ dependencies = ["numpy>=1.21", "OpenEXR>=3.2,<4"]
 train = ["torch>=2.0", "Pillow>=9"]
 test = ["pytest>=7"]
 analysis = ["matplotlib>=3.5"]
+export = ["torch>=2.7", "Pillow>=9", "onnx>=1.16,<2", "onnxruntime>=1.18,<2"]
+tensorrt = ["tensorrt-cu12>=10.13,<11", "cuda-python>=12.9,<13"]
 
 [project.scripts]
 wavefront-denoiser = "wavefront_denoiser.cli:main"
+wavefront-denoiser-export = "wavefront_denoiser.onnx_export:main"
+wavefront-denoiser-build-engine = "wavefront_denoiser.tensorrt_export:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

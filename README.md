@@ -2,6 +2,7 @@
 > [Compare checkpoints, select weights and restore them from R2](docs/checkpoint-selection-and-r2-use.md).
 > [Post-run crops, native images and GIFs](docs/post-run-presentation.md) use R2 data and exported model weights.
 > [RTX 3090 preview instructions](RTX3090_INFERENCE.md): export the best so far, select scenes, and keep downloads separate from comparisons, crops and blue sample maps.
+> [ONNX export and TensorRT renderer integration](../Wavefront-Path-Tracer/docs/MODEL_INTEGRATION.md) provide dense spatial inference from uniform or joint checkpoints.
 
 # Wavefront denoiser
 
